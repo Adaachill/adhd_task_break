@@ -13,11 +13,18 @@ const DURATION_OPTIONS = [15, 30, 45, 60, 90, 120];
 interface Props {
   task: Task;
   onTimeUp: () => void;
+  // 早期に「止める＝完了」した際の実測分数を親へ通知
+  onComplete: (workedMinutes: number) => void;
 }
 
-export function BrakeTimer({ task, onTimeUp }: Props) {
+// タイマー開始からの経過分数（最低1分）
+function elapsedMinutes(startedAt: number | null): number {
+  if (!startedAt) return 0;
+  return Math.max(1, Math.round((Date.now() - startedAt) / 60_000));
+}
+
+export function BrakeTimer({ task, onTimeUp, onComplete }: Props) {
   const startBrakeTimer = useTaskStore((s) => s.startBrakeTimer);
-  const stopBrakeTimer = useTaskStore((s) => s.stopBrakeTimer);
   const { fs } = useLayout();
 
   const isRunning = task.timerStartedAt !== null;
@@ -36,13 +43,14 @@ export function BrakeTimer({ task, onTimeUp }: Props) {
     await startBrakeTimer(task.id, minutes, notifId ?? undefined);
   };
 
+  // 「止める＝早期完了」。通知をキャンセルし、実測分数を親に渡す
   const handleStop = async () => {
     const notifId = notifMap.get(task.id);
     if (notifId) {
       await cancelNotification(notifId);
       notifMap.delete(task.id);
     }
-    await stopBrakeTimer(task.id);
+    onComplete(elapsedMinutes(task.timerStartedAt));
   };
 
   if (isRunning) {
@@ -54,9 +62,11 @@ export function BrakeTimer({ task, onTimeUp }: Props) {
         <Text style={[styles.label, { fontSize: fs.caption }]}>
           {isExpired ? '時間になりました！' : `残り時間（${task.timerMinutes}分設定）`}
         </Text>
-        <Pressable onPress={handleStop} style={styles.stopBtn}>
-          <Text style={[styles.stopText, { fontSize: fs.small }]}>✋ 止める</Text>
-        </Pressable>
+        {!isExpired && (
+          <Pressable onPress={handleStop} style={styles.stopBtn}>
+            <Text style={[styles.stopText, { fontSize: fs.small }]}>✋ 終わった！</Text>
+          </Pressable>
+        )}
       </View>
     );
   }

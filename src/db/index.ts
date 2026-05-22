@@ -31,6 +31,7 @@ async function migrate(db: SQLite.SQLiteDatabase): Promise<void> {
       completed_tier TEXT,
       timer_minutes INTEGER,
       timer_started_at INTEGER,
+      worked_minutes INTEGER,
       completed_at INTEGER,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
@@ -42,6 +43,7 @@ async function migrate(db: SQLite.SQLiteDatabase): Promise<void> {
   for (const col of [
     'ALTER TABLE tasks ADD COLUMN completed_tier TEXT',
     'ALTER TABLE tasks ADD COLUMN timer_started_at INTEGER',
+    'ALTER TABLE tasks ADD COLUMN worked_minutes INTEGER',
     'ALTER TABLE tasks ADD COLUMN completed_at INTEGER',
   ]) {
     try {
