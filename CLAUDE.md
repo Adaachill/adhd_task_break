@@ -1,1 +1,311 @@
 @AGENTS.md
+
+# Claude Code ルール
+
+## ブランチ・PR運用ルール
+
+### 機能ごとに別ブランチ・別PRを作成する
+
+ユーザーから新しい機能追加・変更依頼を受けたときは、**必ず新しいブランチを切って独立したPRを作成**すること。
+複数の機能をひとつのPRにまとめてはいけない。
+
+- ブランチ名の例: `claude/feature-name-xxxx`（末尾4文字はランダム）
+- 依頼が別であれば、同じチャット内でも別ブランチ・別PRとする
+- PRは常にdraftで作成し、mergeはユーザーが判断する
+
+### マージ済みPRへの追加コミット禁止
+
+一度マージされたPRのブランチに対して、追加コミットをpushしてはいけない。
+マージ後に修正・追加が必要になった場合は、**必ず新しいブランチを切って新しいPRを作成する**こと。
+
+- マージ済みブランチへの `git push` は絶対に行わない
+- 同一チャット内でのフィックスも、必ず別ブランチ・別PRとする
+
+### 修正・フィックス前のブランチ状態確認
+
+バグ修正や追加変更を行う前に、**必ず対象ブランチのPR状態を確認する**こと。
+
+
+```bash
+# GitHub MCP ツールで確認する
+mcp__github__pull_request_read(method="get", pullNumber=<PR番号>)
+# または
+git log --oneline origin/main..origin/<branch-name>
+```
+
+
+
+- マージ済み（`merged: true`）の場合 → **新しいブランチ・新しいPRを作成する**
+- 未マージ（オープン中）の場合 → 同ブランチへの追加コミットが可能
+
+**禁止:** PRの状態を確認せずにブランチへ `git push` すること
+
+## PR作成ルール
+
+### 2. スクリーンショットの添付
+
+UIに関わる変更（フロントエンド、CSS、テンプレート等）を含むPRでは、必ず変更前後のスクリーンショットをPRのbodyに添付すること。
+
+- 変更前と変更後を並べて示す
+- スクリーンショットが取得できない場合はその旨を明記する
+
+### 3. レビュアー向け確認手順
+
+PRのbodyに、レビュアーが変更を確認するための手順を以下の折りたたみ形式で記載すること。
+
+
+```markdown
+<details>
+<summary>ローカル確認手順</summary>
+
+**バックエンド起動**
+1. ブランチをチェックアウト: `git checkout <branch>`
+2. 依存関係をインストール: `pip install -r requirements.txt`
+3. バックエンドを起動: `uvicorn main:app --reload`
+   - `DATABASE_URL` 未設定の場合は自動的に SQLite（`app.db`）を使用
+4. データをインポート（初回のみ）: `curl -X POST http://localhost:8000/admin/import_raw_excel`
+   - `raw_excel/` 内の全 Excel ファイルが DB に取り込まれる
+   - APIドキュメント（http://localhost:8000/docs）からも実行可能
+
+**フロントエンド起動**
+5. `cd frontend && npm install`
+6. `npm run dev`
+7. ブラウザで http://localhost:5173 を開く
+
+**確認項目:**
+- [ ] 項目1
+- [ ] 項目2
+
+</details>
+```
+
+
+
+### 4. Changelog更新
+
+**必ず以下を実施すること：**
+
+PR作成時に、`dev_logs/CHANGELOG.md`にエントリを追加する。以下の形式で記載すること。
+
+
+```markdown
+## YYYY-MM-DD: 機能名・タイトル
+**コミット:** `hash`
+**ブランチ:** branch-name
+
+### 変更内容
+- 変更したファイルと概要を箇条書き
+
+### 変更意図・背景
+なぜその変更をしたか。どんな課題を解決したか。
+
+### 技術的決定事項
+設計上の選択肢とその理由（複数案があった場合は比較も書く）。
+
+### 残課題・次のステップ
+この変更で積み残したこと、次に着手すべきこと。
+```
+
+
+
+例：
+
+```markdown
+## 2026-05-11: ユーザー認証機能の追加
+**コミット:** `abc1234`
+**ブランチ:** claude/add-oauth-xxxx
+
+### 変更内容
+- `app/auth.py`: Google OAuth統合を実装
+- `app/models.py`: Userモデルに認証フィールド追加
+- `frontend/src/pages/Login.tsx`: ログインUIを新規作成
+
+### 変更意図・背景
+ユーザーがシステムに登録・ログインできるようにした。
+
+### 技術的決定事項
+OAuth vs セッション認証を検討し、セキュリティと実装の手軽さからOAuthを選択。
+
+### 残課題・次のステップ
+- ユーザープロフィール編集機能を実装
+- パスワードリセット機能を追加
+```
+
+
+
+### 5. PRテンプレート構成
+
+
+```markdown
+## Summary
+- 変更点を箇条書きで
+
+## Screenshots
+<!-- UIの変更がある場合、変更前後のスクリーンショットを貼る -->
+| Before | After |
+|--------|-------|
+| (画像) | (画像) |
+
+<details>
+<summary>ローカル確認手順</summary>
+~~ローカル確認手順を記載
+```
+
+
+
+## 開発ルール
+
+### リファクタリング安全ルール
+
+関数・変数・ファイル名をリネームまたは削除する際は、**必ず以下を実施**すること。
+
+1. 変更前に `grep -r "旧名称" .` で全参照箇所を洗い出す
+2. 洗い出したファイルをすべて修正してからコミットする
+3. PR説明に「修正対象ファイル一覧」を記載する
+
+**禁止:** 一部のファイルだけ修正してPRを出すこと（PR #13のImportErrorが典型例）
+
+### マージ前チェックルール
+
+フロントエンドを含む変更は、PR作成前に以下を**必ず実行**すること。
+
+
+```bash
+cd frontend
+npm run build       # 本番ビルドが通ることを確認
+npx tsc --noEmit    # 型エラーがないことを確認
+```
+
+
+
+- ローカルの `npm run dev`（esbuild）では通っても、`tsc` で型エラーが出る場合がある（PR #19の教訓）
+- ビルドエラーまたは型エラーがある場合は**PRを作成しない**
+
+### モバイル互換性ルール
+
+UI に関わる変更は、PC での確認に加えて**モバイル（iOS・Android）での動作を必ず確認**すること。
+
+#### ブラウザエンジンの前提知識
+
+| 環境 | エンジン | 特徴 |
+|------|---------|------|
+| iOS Safari | WebKit | Apple の制約により iOS の全ブラウザが WebKit を使用 |
+| iOS Chrome / Firefox / Edge | WebKit (WKWebView) | 見た目は別ブラウザでも内部は Safari と同一エンジン |
+| Android Chrome | Blink | PC Chrome と同エンジン。標準準拠度が高い |
+| Android Firefox | Gecko | PC Firefox と同エンジン |
+| Android WebView | Blink | ハイブリッドアプリ内の表示に使用。旧端末ではバージョンが古い場合あり |
+
+**iOS**: Safari 1台で確認すれば iOS の全ブラウザをカバーできる。
+**Android**: Chrome（Blink）が代表。旧端末の WebView 向けには別途確認が必要な場合がある。
+
+#### DOM サイズ取得ルール
+
+`clientWidth` / `getBoundingClientRect()` の直接読み取りを**禁止**し、`ResizeObserver` を使うこと。
+
+
+```typescript
+// NG: iOS/Android でレイアウト未確定時に 0 が返りうる
+const w = containerRef.current.clientWidth
+if (w <= 0) return  // 一度 return したら再描画されない
+
+// OK: レイアウト確定・画面回転のタイミングで自動的に再発火する
+const observer = new ResizeObserver(([entry]) => {
+  const width = Math.floor(entry.contentRect.width)
+  if (width > 0) draw(width)
+})
+observer.observe(containerRef.current)
+return () => observer.disconnect()
+```
+
+
+
+理由：iOS WebKit・Android の一部端末では、コンポーネントマウント直後に `clientWidth=0` を返すことがある。`ResizeObserver` はレイアウト確定後に必ず発火するため、タイミング問題を回避できる。
+
+#### インタラクション実装ルール
+
+マウスイベントはタッチデバイスで発火しない。`mousemove` / `mouseenter` / `mouseout` を使う場合は、対応するタッチイベントを**必ずセットで実装**すること。iOS・Android とも同じイベント API を使うため、一度の実装で両方に対応できる。
+
+
+```typescript
+// NG: タッチデバイスで動かない
+element.on('mousemove', handler)
+
+// OK: マウスとタッチを両方実装する
+element
+  .on('mousemove', (e: MouseEvent) => show(e.clientX, e.clientY))
+  .on('mouseout', hide)
+  .on('touchstart', (e: TouchEvent) => {
+    e.preventDefault()  // スクロールとの競合を防ぐ
+    const t = e.touches[0]
+    if (t) show(t.clientX, t.clientY)
+  }, { passive: false })
+  .on('touchend', hide)
+```
+
+
+
+#### SVG / Canvas を使う場合の注意点
+
+| 落とし穴 | 対象 | 対策 |
+|----------|------|------|
+| `clientWidth=0` でチャートが描画されない | iOS・Android | `ResizeObserver` を使う（上記参照） |
+| `getTotalLength()` が例外を投げる | iOS Safari | `try { return el.getTotalLength() } catch { return 0 }` |
+| `stroke-dashoffset` アニメーションが止まる | iOS（バックグラウンド時） | `document.visibilitychange` で再開処理を入れる |
+| `mousemove` でツールチップが出ない | iOS・Android | `touchstart` を追加する（上記参照） |
+| `position: fixed; inset: 0` が崩れる | iOS 14 以前 | `top:0; right:0; bottom:0; left:0` を明示的に書く |
+
+#### PR チェックリスト（UI 変更時）
+
+
+```markdown
+- [ ] PC Chrome で動作確認
+- [ ] iPhone Safari で動作確認（iOS の全ブラウザをカバー）
+- [ ] Android Chrome で動作確認
+- [ ] 画面回転・ウィンドウリサイズ後にレイアウトが崩れないこと
+- [ ] タッチ操作（タップ・スワイプ）が正しく動作すること
+```
+
+
+### テスト実行ルール
+
+バックエンドのロジック変更・新規実装を行った場合は、以下を確認すること。
+
+- インポート系機能（Excel/CSV読み込み）の変更は特にテストが必要
+  - float/int型の正規化
+  - 重複・上書き時の挙動
+  - バリデーション境界値
+- `pytest` が導入されている場合は必ずテストを実行し、全件グリーンであることを確認する
+
+### ドキュメント更新ルール
+
+以下のケースでは、対応するドキュメントを**コードと同じPRで必ず更新**すること。
+
+| 変更の種類 | 更新するファイル |
+|------------|----------------|
+| 新しいアルゴリズム・計算ロジックの追加 | `docs/dev_log.md` に設計・根拠を記載 |
+| APIエンドポイントの追加・変更 | `README.md` または `docs/` 配下のAPI仕様を更新 |
+| 環境変数の追加・変更 | `README.md` のセットアップ手順を更新 |
+| DBスキーマ（モデル）の変更 | `dev_logs/CHANGELOG.md` に変更内容とマイグレーション手順を記載 |
+
+### セキュリティルール
+
+1. **入力値バリデーション**
+   - 新規APIエンドポイント追加時は、DB制約と同等のバリデーションをAPIレイヤーにも必ず実装する
+   - 数値フィールドには最小・最大値チェックを入れる（例: ポイント 150〜750）
+
+2. **環境変数の管理**
+   - 本番の認証情報・URLは GitHub Secrets に格納し、コードにハードコードしない
+   - ローカル開発用は `.env.local` を使用（`.gitignore` 対象）
+   - デフォルト値は安全な値（SQLite、localhost）にする
+
+3. **エラーレスポンス**
+   - ユーザー向けエラーには原因を特定できる情報を含める（Internal Server Error で握りつぶさない）
+   - ただし、スタックトレース等の内部実装詳細は本番環境では返さない
+
+**チェックリスト（APIエンドポイントを追加・変更するとき）:**
+
+1. バックエンドの `Query(default, ge=..., le=...)` の上下限を確認する
+2. フロントエンドから渡す実際の値がその範囲内に収まることを確認する
+3. 上限を変えた場合は、フロントエンド側も合わせて更新する
+
+**禁止:** フロントエンドがバックエンドの上限を超えた値を渡すこと
