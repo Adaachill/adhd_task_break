@@ -14,6 +14,7 @@ interface TaskRow {
   completed_tier: string | null;
   timer_minutes: number | null;
   timer_started_at: number | null;
+  worked_minutes: number | null;
   completed_at: number | null;
   created_at: number;
   updated_at: number;
@@ -32,6 +33,7 @@ function rowToTask(r: TaskRow): Task {
     completedTier: (r.completed_tier as ShojikubaiTier) ?? null,
     timerMinutes: r.timer_minutes,
     timerStartedAt: r.timer_started_at,
+    workedMinutes: r.worked_minutes,
     completedAt: r.completed_at,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
@@ -43,9 +45,9 @@ export async function insertTask(task: Task): Promise<void> {
   await db.runAsync(
     `INSERT INTO tasks
        (id, text, type, due, is_habit, status, classify_source,
-        shojikubai, completed_tier, timer_minutes, timer_started_at, completed_at,
-        created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        shojikubai, completed_tier, timer_minutes, timer_started_at, worked_minutes,
+        completed_at, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       task.id,
       task.text,
@@ -58,6 +60,7 @@ export async function insertTask(task: Task): Promise<void> {
       task.completedTier,
       task.timerMinutes,
       task.timerStartedAt,
+      task.workedMinutes,
       task.completedAt,
       task.createdAt,
       task.updatedAt,
@@ -81,13 +84,23 @@ export async function listToday(): Promise<Task[]> {
   return rows.map(rowToTask);
 }
 
+export async function listDoneBetween(startMs: number, endMs: number): Promise<Task[]> {
+  const db = await getDb();
+  const rows = await db.getAllAsync<TaskRow>(
+    `SELECT * FROM tasks WHERE status = 'done' AND completed_at >= ? AND completed_at < ?
+     ORDER BY completed_at DESC`,
+    [startMs, endMs]
+  );
+  return rows.map(rowToTask);
+}
+
 export async function updateTask(task: Task): Promise<void> {
   const db = await getDb();
   await db.runAsync(
     `UPDATE tasks
      SET text = ?, type = ?, due = ?, is_habit = ?, status = ?, classify_source = ?,
          shojikubai = ?, completed_tier = ?, timer_minutes = ?, timer_started_at = ?,
-         completed_at = ?, updated_at = ?
+         worked_minutes = ?, completed_at = ?, updated_at = ?
      WHERE id = ?`,
     [
       task.text,
@@ -100,6 +113,7 @@ export async function updateTask(task: Task): Promise<void> {
       task.completedTier,
       task.timerMinutes,
       task.timerStartedAt,
+      task.workedMinutes,
       task.completedAt,
       task.updatedAt,
       task.id,
