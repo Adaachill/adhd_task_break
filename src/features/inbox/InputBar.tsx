@@ -3,12 +3,14 @@ import { useState } from 'react';
 import { Platform, StyleSheet, TextInput, View } from 'react-native';
 
 import { IconButton } from '@/components/ui/IconButton';
+import { useLayout } from '@/hooks/useLayout';
 import { useTaskStore } from '@/store/taskStore';
-import { colors, radius, spacing, typography } from '@/theme/tokens';
+import { colors, radius, spacing } from '@/theme/tokens';
 
 export function InputBar() {
   const [text, setText] = useState('');
   const addTask = useTaskStore((s) => s.addTask);
+  const { fs, isDesktop } = useLayout();
 
   const canSend = text.trim().length > 0;
 
@@ -23,9 +25,9 @@ export function InputBar() {
   };
 
   return (
-    <View style={styles.bar}>
+    <View style={[styles.bar, isDesktop && styles.barDesktop]}>
       <TextInput
-        style={styles.input}
+        style={[styles.input, { fontSize: fs.body }]}
         value={text}
         onChangeText={setText}
         placeholder="タスクを書き留める…"
@@ -55,6 +57,10 @@ const styles = StyleSheet.create({
     paddingTop: spacing.sm,
     paddingBottom: spacing.sm,
   },
+  barDesktop: {
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.md,
+  },
   input: {
     flex: 1,
     minHeight: 44,
@@ -64,6 +70,5 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
     color: colors.text,
-    fontSize: typography.body,
   },
 });

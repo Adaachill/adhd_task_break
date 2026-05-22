@@ -1,9 +1,14 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
+import { useWindowDimensions } from 'react-native';
 
-import { colors } from '@/theme/tokens';
+import { colors, typography } from '@/theme/tokens';
 
 export default function TabsLayout() {
+  const { width } = useWindowDimensions();
+  const isDesktop = width >= 768;
+  const tabLabelSize = isDesktop ? typography.small * 1.25 : typography.small;
+
   return (
     <Tabs
       screenOptions={{
@@ -14,6 +19,10 @@ export default function TabsLayout() {
         tabBarStyle: {
           backgroundColor: colors.surface,
           borderTopColor: colors.border,
+          height: isDesktop ? 56 : 49,
+        },
+        tabBarLabelStyle: {
+          fontSize: tabLabelSize,
         },
       }}>
       <Tabs.Screen
@@ -21,7 +30,7 @@ export default function TabsLayout() {
         options={{
           title: '吐き出し',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="chatbubble-ellipses" size={size} color={color} />
+            <Ionicons name="chatbubble-ellipses" size={isDesktop ? size * 1.2 : size} color={color} />
           ),
         }}
       />
@@ -29,14 +38,18 @@ export default function TabsLayout() {
         name="today"
         options={{
           title: '今日',
-          tabBarIcon: ({ color, size }) => <Ionicons name="today" size={size} color={color} />,
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="today" size={isDesktop ? size * 1.2 : size} color={color} />
+          ),
         }}
       />
       <Tabs.Screen
         name="log"
         options={{
           title: '褒めログ',
-          tabBarIcon: ({ color, size }) => <Ionicons name="sparkles" size={size} color={color} />,
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="sparkles" size={isDesktop ? size * 1.2 : size} color={color} />
+          ),
         }}
       />
     </Tabs>
