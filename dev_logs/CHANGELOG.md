@@ -1,5 +1,40 @@
 # 開発履歴
 
+## 2026-05-22: 画面2「今日の3タスク」実装
+**ブランチ:** claude/today-screen-Tz4w
+
+### 変更内容
+- `src/types/task.ts`: `ShojikubaiTier`, `completedTier`, `timerStartedAt`, `completedAt` フィールド追加
+- `src/db/index.ts`: 新カラムのマイグレーション（ALTER TABLE + 既存DB安全対応）
+- `src/db/taskRepo.ts`: `listToday()` 追加、新フィールド対応
+- `src/store/taskStore.ts`: `todayTasks`, `loadToday`, `moveToToday`, `moveToInbox`, `completeShojikubai`, `startBrakeTimer`, `stopBrakeTimer` 追加
+- `src/hooks/useCountdown.ts`: 絶対時刻ベースのカウントダウンフック
+- `src/services/notifications/index.ts`: expo-notifications ラッパー（許可取得・スケジュール・キャンセル）
+- `src/features/today/ShojikubaiButtons.tsx`: 梅/竹/松ボタン
+- `src/features/today/BrakeTimer.tsx`: 🔥タイマーUI（時間選択→カウントダウン→停止）
+- `src/features/today/DoneOverlay.tsx`: 「できた！」演出モーダル（梅は3秒自動クローズ）
+- `src/features/today/BrakeAlertModal.tsx`: タイムアップ警告（15分延長 / 強制終了）
+- `src/features/today/TodayTaskCard.tsx`: カード統合コンポーネント
+- `src/features/today/TaskPickerModal.tsx`: inboxからタスクを選ぶボトムシート
+- `src/app/(tabs)/today.tsx`: 画面2メイン（単発/習慣タブ・3枠・空枠ピッカー）
+- `src/app/_layout.tsx`: 起動時に `loadToday()` も実行
+
+### 変更意図・背景
+spec 画面2「今日の3タスク」を実装。「3枠上限で選択麻痺を防ぐ」「梅で即できた！演出」「🔥は時間制限必須」
+という3つのUX方針をそのまま画面に落とし込んだ。
+
+### 技術的決定事項
+- タイマーは `timerStartedAt`（開始エポックms）を DB 保存する絶対時刻ベース。バックグラウンド復帰後も残り時間が正確
+- `expo-notifications` でタイマー終了時のローカル通知をスケジュール。web は通知スキップで安全に動作
+- ブレーキ警告は `BrakeAlertModal`（inApp）と通知（バックグラウンド）の2系統
+- 梅達成時の `DoneOverlay` は3秒自動クローズで「すぐ次に進める」体験を演出
+- `notifMap`（Map）で通知IDをメモリ管理し、停止時にキャンセル
+
+### 残課題・次のステップ
+- 作業中常時バナー（Android: ForegroundService / iOS: Live Activity）
+- 画面3（褒めログ）
+- 吐き出し画面に「今日やる↑」昇格ボタンを追加（現状はピッカー経由のみ）
+
 ## 2026-05-22: レスポンシブフォント + バッジ選択UI（PC/スマホ対応）
 **ブランチ:** claude/affectionate-bell-PYjxQ
 

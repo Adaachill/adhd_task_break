@@ -1,32 +1,49 @@
 import { create } from 'zustand';
 
-import { insertTask, listInbox, updateTask } from '@/db/taskRepo';
+import { insertTask, listInbox, listToday, updateTask } from '@/db/taskRepo';
 import { classify } from '@/services/classify';
-import type { ClassificationPatch, Task } from '@/types/task';
+import type { ClassificationPatch, ShojikubaiTier, Task } from '@/types/task';
 
 function genId(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
 interface TaskState {
-  tasks: Task[];
+  tasks: Task[]; // inbox
+  todayTasks: Task[]; // status='today'
   aiEnabled: boolean;
   loaded: boolean;
 
   loadInbox: () => Promise<void>;
+  loadToday: () => Promise<void>;
   addTask: (text: string) => Promise<void>;
   updateClassification: (id: string, patch: ClassificationPatch) => Promise<void>;
   setAiEnabled: (enabled: boolean) => void;
+
+  // 画面2: 今日やる
+  moveToToday: (id: string) => Promise<void>;
+  moveToInbox: (id: string) => Promise<void>;
+  // 🔵 松竹梅達成
+  completeShojikubai: (id: string, tier: ShojikubaiTier) => Promise<void>;
+  // 🔥 ブレーキタイマー
+  startBrakeTimer: (id: string, minutes: number, notificationId?: string) => Promise<void>;
+  stopBrakeTimer: (id: string) => Promise<void>;
 }
 
 export const useTaskStore = create<TaskState>((set, get) => ({
   tasks: [],
+  todayTasks: [],
   aiEnabled: true,
   loaded: false,
 
   loadInbox: async () => {
     const tasks = await listInbox();
     set({ tasks, loaded: true });
+  },
+
+  loadToday: async () => {
+    const todayTasks = await listToday();
+    set({ todayTasks });
   },
 
   addTask: async (raw: string) => {
@@ -44,17 +61,18 @@ export const useTaskStore = create<TaskState>((set, get) => ({
       status: 'inbox',
       classifySource: result.type || result.due ? 'ai' : 'unclassified',
       shojikubai: null,
+      completedTier: null,
       timerMinutes: null,
+      timerStartedAt: null,
+      completedAt: null,
       createdAt: now,
       updatedAt: now,
     };
 
-    // 楽観的更新 → 永続化
     set((s) => ({ tasks: [...s.tasks, task] }));
     await insertTask(task);
   },
 
-  // バッジ1タップ補正など、分類の手動更新
   updateClassification: async (id, patch) => {
     const current = get().tasks.find((t) => t.id === id);
     if (!current) return;
@@ -62,7 +80,6 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     const updated: Task = {
       ...current,
       ...patch,
-      // 手動補正された場合は出どころを manual に
       classifySource: patch.classifySource ?? 'manual',
       updatedAt: Date.now(),
     };
@@ -72,4 +89,97 @@ export const useTaskStore = create<TaskState>((set, get) => ({
   },
 
   setAiEnabled: (enabled) => set({ aiEnabled: enabled }),
+
+  // inbox → today（最大3枠チェックは呼び出し側で行う）
+  moveToToday: async (id: string) => {
+    const task = get().tasks.find((t) => t.id === id);
+    if (!task) return;
+
+    const updated: Task = { ...task, status: 'today', updatedAt: Date.now() };
+    set((s) => ({
+      tasks: s.tasks.filter((t) => t.id !== id),
+      todayTasks: [...s.todayTasks, updated],
+    }));
+    await updateTask(updated);
+  },
+
+  // today → inbox（タイマーもリセット）
+  moveToInbox: async (id: string) => {
+    const task = get().todayTasks.find((t) => t.id === id);
+    if (!task) return;
+
+    const updated: Task = {
+      ...task,
+      status: 'inbox',
+      timerStartedAt: null,
+      updatedAt: Date.now(),
+    };
+    set((s) => ({
+      todayTasks: s.todayTasks.filter((t) => t.id !== id),
+      tasks: [...s.tasks, updated],
+    }));
+    await updateTask(updated);
+  },
+
+  // 🔵 松竹梅達成 → done
+  completeShojikubai: async (id: string, tier: ShojikubaiTier) => {
+    const task = get().todayTasks.find((t) => t.id === id);
+    if (!task) return;
+
+    const now = Date.now();
+    const updated: Task = {
+      ...task,
+      status: 'done',
+      completedTier: tier,
+      completedAt: now,
+      updatedAt: now,
+    };
+
+    set((s) => ({ todayTasks: s.todayTasks.filter((t) => t.id !== id) }));
+    await updateTask(updated);
+  },
+
+  // 🔥 タイマー開始（絶対時刻ベース）
+  startBrakeTimer: async (id: string, minutes: number, notificationId?: string) => {
+    const task = get().todayTasks.find((t) => t.id === id);
+    if (!task) return;
+
+    const updated: Task = {
+      ...task,
+      timerMinutes: minutes,
+      timerStartedAt: Date.now(),
+      // notificationId を shojikubai フィールドには入れず、将来の拡張カラムを想定
+      updatedAt: Date.now(),
+    };
+
+    // notificationId はメモリのみ保持（キャンセル用）
+    if (notificationId) {
+      notifMap.set(id, notificationId);
+    }
+
+    set((s) => ({
+      todayTasks: s.todayTasks.map((t) => (t.id === id ? updated : t)),
+    }));
+    await updateTask(updated);
+  },
+
+  // 🔥 タイマー停止（完了/キャンセル）
+  stopBrakeTimer: async (id: string) => {
+    const task = get().todayTasks.find((t) => t.id === id);
+    if (!task) return;
+
+    const updated: Task = {
+      ...task,
+      timerStartedAt: null,
+      updatedAt: Date.now(),
+    };
+
+    set((s) => ({
+      todayTasks: s.todayTasks.map((t) => (t.id === id ? updated : t)),
+    }));
+    await updateTask(updated);
+  },
 }));
+
+// 通知IDのメモリキャッシュ（再起動時は失われるが、タイマー停止時のキャンセルに使う）
+export const notifMap = new Map<string, string>();
