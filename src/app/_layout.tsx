@@ -14,10 +14,12 @@ import { colors } from '@/theme/tokens';
 export default function RootLayout() {
   const loadInbox = useTaskStore((s) => s.loadInbox);
 
+  const loadToday = useTaskStore((s) => s.loadToday);
+
   useEffect(() => {
-    // DB を開いてマイグレーション → 受信トレイ復元
-    void getDb().then(() => loadInbox());
-  }, [loadInbox]);
+    // DB を開いてマイグレーション → 受信トレイ・今日タスク復元
+    void getDb().then(() => Promise.all([loadInbox(), loadToday()]));
+  }, [loadInbox, loadToday]);
 
   return (
     <SafeAreaProvider>

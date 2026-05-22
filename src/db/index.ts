@@ -28,10 +28,26 @@ async function migrate(db: SQLite.SQLiteDatabase): Promise<void> {
       status TEXT NOT NULL DEFAULT 'inbox',
       classify_source TEXT NOT NULL DEFAULT 'unclassified',
       shojikubai TEXT,
+      completed_tier TEXT,
       timer_minutes INTEGER,
+      timer_started_at INTEGER,
+      completed_at INTEGER,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
   `);
+
+  // 既存DBへの追加カラムマイグレーション（ALTER TABLE は既存カラムがあるとエラーになるため無視）
+  for (const col of [
+    'ALTER TABLE tasks ADD COLUMN completed_tier TEXT',
+    'ALTER TABLE tasks ADD COLUMN timer_started_at INTEGER',
+    'ALTER TABLE tasks ADD COLUMN completed_at INTEGER',
+  ]) {
+    try {
+      await db.execAsync(col);
+    } catch {
+      // カラムがすでに存在する場合はスキップ
+    }
+  }
 }

@@ -12,6 +12,9 @@ export type TaskStatus = 'inbox' | 'today' | 'done';
 // 分類の出どころ（AI / 手動補正 / 未分類）
 export type ClassifySource = 'ai' | 'manual' | 'unclassified';
 
+// 松竹梅の達成レベル
+export type ShojikubaiTier = 'ume' | 'take' | 'matsu';
+
 export interface Task {
   id: string;
   text: string;
@@ -21,17 +24,23 @@ export interface Task {
   status: TaskStatus;
   classifySource: ClassifySource;
 
-  // 将来の画面2用に確保（MVP本計画では未使用）
-  // 🔵: 松竹梅の各定義 / 🔥: 制限分数
+  // 🔵 松竹梅の各行動定義（ユーザーが書く or AI提案）
   shojikubai: ShojikubaiDef | null;
-  timerMinutes: number | null;
+  // 🔵 完了時の達成レベル
+  completedTier: ShojikubaiTier | null;
 
+  // 🔥 制限分数（開始前に選択）
+  timerMinutes: number | null;
+  // 🔥 タイマー開始エポックms（絶対時刻ベース）
+  timerStartedAt: number | null;
+
+  completedAt: number | null; // 完了エポックms
   createdAt: number; // epoch ms
   updatedAt: number; // epoch ms
 }
 
 export interface ShojikubaiDef {
-  ume: string; // 梅: 1秒でできる行動
+  ume: string; // 梅: 1秒でできる最低限の行動
   take: string; // 竹: 通常の最低基準
   matsu: string; // 松: 目指さなくてOKな理想
 }
