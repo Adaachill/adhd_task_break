@@ -1,5 +1,33 @@
 # 開発履歴
 
+## 2026-05-23: 作業中離脱抑止（バナー + 復帰ポップアップ）
+**ブランチ:** claude/focus-drift-3a7k
+
+### 変更内容
+- `src/hooks/useFocusDriftDetection.ts`: 新規。AppState（native）/ `visibilitychange`（web）でバックグラウンド遷移を検知。🔥 ブレーキタイマー実行中のみ動作し、復帰までの時間が閾値（5秒）以上なら離脱とみなす。
+- `src/features/today/FocusDriftPopup.tsx`: 復帰時のモーダル「戻ってきましたね／そのまま続ける／中断する」。
+- `src/features/today/ActiveSessionBanner.tsx`: 画面2上部に固定表示する作業中バナー「🔥 作業中：〇〇 — 残り MM:SS」。
+- `src/services/notifications/index.ts`: `scheduleDriftNotification(taskText, delayMs)` を追加。バックグラウンド遷移時に遅延発火させ、復帰時に必ずキャンセル。
+- `src/app/_layout.tsx`: `useFocusDriftDetection` をルートにマウントし、`<FocusDriftPopup>` をグローバルモーダルとして配置。
+- `src/app/(tabs)/today.tsx`: `<ActiveSessionBanner />` をヘッダー直下に配置。
+
+### 変更意図・背景
+spec ⑥「作業中離脱抑止」の MVP 実装。ADHD の過集中・タスクすり替えを防ぐため、🔥 タイマー走行中に他アプリへ切り替わった場合に通知＋復帰時ポップアップで作業へ引き戻す。spec 1.2-5 にあるとおり、OS 制約で「他アプリ起動の直接検知」は不可なので、自アプリのバックグラウンド遷移をトリガにしている。
+
+### 技術的決定事項
+- **閾値 5 秒**：通知センターを一瞬開いただけで発火しないよう、5 秒未満の離脱はポップアップを出さない。短時間の確認は離脱とみなさない設計。
+- **通知遅延 10 秒**：バックグラウンド直後に通知を出すと「ただ通知センター開いただけ」のケースで邪魔になる。10 秒経っても戻ってこなければ離脱と判断して通知発火。復帰時には必ずキャンセル。
+- **検知範囲は 🔥 のみ**：MVP では「作業セッション」を明確に持つのは 🔥 のブレーキタイマーだけ。🔵 の松竹梅はワンタップ完了なので作業セッションの概念がない。
+- **Web 対応**：`Page Visibility API`（`document.visibilitychange`）で同等の挙動を実現。native 通知は出ないが、復帰時のポップアップは出る。SSR ガード（`typeof document === 'undefined'`）あり。
+- **マウント位置**：ルートレイアウト（`_layout.tsx`）にフック＋ポップアップを配置することで、他タブにいるときも離脱検知が動く。
+
+### 残課題・次のステップ
+- 🔵 タスクにも「作業セッション」の概念を導入するか検討（現状は松竹梅タップで即完了）。
+- iOS Live Activity / Android フォアグラウンドサービスでの「OS レベル常時バナー」（spec 3.2 のフル実装）は v2。
+- バナーのアニメーション（パルス等）でより視認性を上げる。
+
+---
+
 ## 2026-05-22: Vercel への Web デプロイ対応（iPhone オンライン利用）
 **ブランチ:** claude/web-deploy-vrcl
 

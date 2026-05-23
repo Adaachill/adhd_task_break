@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { ActiveSessionBanner } from '@/features/today/ActiveSessionBanner';
 import { TaskPickerModal } from '@/features/today/TaskPickerModal';
 import { TodayTaskCard } from '@/features/today/TodayTaskCard';
 import { useLayout } from '@/hooks/useLayout';
@@ -51,6 +52,9 @@ export default function TodayScreen() {
         <View style={styles.header}>
           <Text style={[styles.title, { fontSize: fs.title }]}>今日の3タスク</Text>
         </View>
+
+        {/* 🔥 作業中バナー（タイマー実行中のみ表示） */}
+        <ActiveSessionBanner />
 
         {/* 単発 / 習慣タブ */}
         <View style={styles.tabRow}>
