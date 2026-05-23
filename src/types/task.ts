@@ -34,6 +34,9 @@ export interface Task {
   // 🔥 タイマー開始エポックms（絶対時刻ベース）
   timerStartedAt: number | null;
 
+  // 実際に動けた分数（褒めログ集計用。🔥は実測、🔵は null）
+  workedMinutes: number | null;
+
   completedAt: number | null; // 完了エポックms
   createdAt: number; // epoch ms
   updatedAt: number; // epoch ms

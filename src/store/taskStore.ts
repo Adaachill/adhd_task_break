@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-import { insertTask, listInbox, listToday, updateTask } from '@/db/taskRepo';
+import { insertTask, listDoneBetween, listInbox, listToday, updateTask } from '@/db/taskRepo';
 import { classify } from '@/services/classify';
 import type { ClassificationPatch, ShojikubaiTier, Task } from '@/types/task';
 
@@ -11,11 +11,13 @@ function genId(): string {
 interface TaskState {
   tasks: Task[]; // inbox
   todayTasks: Task[]; // status='today'
+  doneTasks: Task[]; // 本日完了（褒めログ用）
   aiEnabled: boolean;
   loaded: boolean;
 
   loadInbox: () => Promise<void>;
   loadToday: () => Promise<void>;
+  loadDoneToday: () => Promise<void>;
   addTask: (text: string) => Promise<void>;
   updateClassification: (id: string, patch: ClassificationPatch) => Promise<void>;
   setAiEnabled: (enabled: boolean) => void;
@@ -28,11 +30,21 @@ interface TaskState {
   // 🔥 ブレーキタイマー
   startBrakeTimer: (id: string, minutes: number, notificationId?: string) => Promise<void>;
   stopBrakeTimer: (id: string) => Promise<void>;
+  // 🔥 タスク完了（実測分数を記録）
+  completeFireTask: (id: string, workedMinutes: number) => Promise<void>;
+}
+
+// 当日の 0:00〜翌0:00 のエポックms範囲
+function todayRange(): { start: number; end: number } {
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  return { start, end: start + 24 * 60 * 60 * 1000 };
 }
 
 export const useTaskStore = create<TaskState>((set, get) => ({
   tasks: [],
   todayTasks: [],
+  doneTasks: [],
   aiEnabled: true,
   loaded: false,
 
@@ -44,6 +56,12 @@ export const useTaskStore = create<TaskState>((set, get) => ({
   loadToday: async () => {
     const todayTasks = await listToday();
     set({ todayTasks });
+  },
+
+  loadDoneToday: async () => {
+    const { start, end } = todayRange();
+    const doneTasks = await listDoneBetween(start, end);
+    set({ doneTasks });
   },
 
   addTask: async (raw: string) => {
@@ -64,6 +82,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
       completedTier: null,
       timerMinutes: null,
       timerStartedAt: null,
+      workedMinutes: null,
       completedAt: null,
       createdAt: now,
       updatedAt: now,
@@ -135,7 +154,10 @@ export const useTaskStore = create<TaskState>((set, get) => ({
       updatedAt: now,
     };
 
-    set((s) => ({ todayTasks: s.todayTasks.filter((t) => t.id !== id) }));
+    set((s) => ({
+      todayTasks: s.todayTasks.filter((t) => t.id !== id),
+      doneTasks: [updated, ...s.doneTasks],
+    }));
     await updateTask(updated);
   },
 
@@ -163,7 +185,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     await updateTask(updated);
   },
 
-  // 🔥 タイマー停止（完了/キャンセル）
+  // 🔥 タイマー停止（タイマーだけリセット。タスクは today に残る）
   stopBrakeTimer: async (id: string) => {
     const task = get().todayTasks.find((t) => t.id === id);
     if (!task) return;
@@ -176,6 +198,28 @@ export const useTaskStore = create<TaskState>((set, get) => ({
 
     set((s) => ({
       todayTasks: s.todayTasks.map((t) => (t.id === id ? updated : t)),
+    }));
+    await updateTask(updated);
+  },
+
+  // 🔥 タスク完了 → done（実測分数を記録）
+  completeFireTask: async (id: string, workedMinutes: number) => {
+    const task = get().todayTasks.find((t) => t.id === id);
+    if (!task) return;
+
+    const now = Date.now();
+    const updated: Task = {
+      ...task,
+      status: 'done',
+      timerStartedAt: null,
+      workedMinutes,
+      completedAt: now,
+      updatedAt: now,
+    };
+
+    set((s) => ({
+      todayTasks: s.todayTasks.filter((t) => t.id !== id),
+      doneTasks: [updated, ...s.doneTasks],
     }));
     await updateTask(updated);
   },
