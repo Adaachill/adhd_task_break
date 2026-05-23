@@ -8,6 +8,8 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { GradientBackground } from '@/components/ui/GradientBackground';
 import { getDb } from '@/db';
+import { FocusDriftPopup } from '@/features/today/FocusDriftPopup';
+import { useFocusDriftDetection } from '@/hooks/useFocusDriftDetection';
 import { useTaskStore } from '@/store/taskStore';
 import { colors } from '@/theme/tokens';
 
@@ -15,6 +17,8 @@ export default function RootLayout() {
   const loadInbox = useTaskStore((s) => s.loadInbox);
 
   const loadToday = useTaskStore((s) => s.loadToday);
+
+  const { driftedTask, dismissDrift } = useFocusDriftDetection();
 
   useEffect(() => {
     // DB を開いてマイグレーション → 受信トレイ・今日タスク復元
@@ -32,6 +36,7 @@ export default function RootLayout() {
             }}
           />
         </GradientBackground>
+        <FocusDriftPopup task={driftedTask} onDismiss={dismissDrift} />
         <StatusBar style="light" />
       </View>
     </SafeAreaProvider>
