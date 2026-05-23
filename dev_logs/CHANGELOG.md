@@ -1,5 +1,38 @@
 # 開発履歴
 
+## 2026-05-23: 🔵 タスクの計測ループ（取り掛かりラグ + 実測分数）— PR-A
+**ブランチ:** claude/blue-measure-7m2f
+
+### 変更内容
+- `src/types/task.ts`: `movedToTodayAt` / `blueStartedAt` / `timeToStartSeconds` / `continued` を追加。
+- `src/db/index.ts`: 上記4カラムを `ALTER TABLE` で追加（既存パターン踏襲）。
+- `src/db/taskRepo.ts`: 行マッパ・insert・update を新フィールド対応。
+- `src/store/taskStore.ts`:
+  - `moveToToday` で `movedToTodayAt = now` を記録（取り掛かりラグの起点）。
+  - 新 `startBlueTask(id)` で `blueStartedAt` 記録 + `timeToStartSeconds` 計算。
+  - `completeShojikubai` で 🚀 押下済みなら `workedMinutes = (now - blueStartedAt)/60s`、`continued = true` を保存。押してなければ null のまま。
+  - `moveToInbox` で計測値をリセット。
+- `src/features/today/StartTaskButton.tsx`: 新規。🔵 用「🚀 始める」ボタン。押下後は経過時間 mm:ss を pill で表示。
+- `src/features/today/TodayTaskCard.tsx`: 🔵 表示時に `<StartTaskButton>` を 松竹梅ボタンの上に配置。
+- `src/app/(tabs)/log.tsx`: 🔵 で 🚀 押下済みのものは「⏱ ◯分」バッジと「🚀 取り掛かりまで ◯◯」サブテキストを表示。
+
+### 変更意図・背景
+ADHD の3課題（① 見積もり甘い、② 取り掛かりに時間、③ 気が散る）に対し、まずは「測ること」だけで効用を出す PR-A。AI 抜きで実測ループを動かす。受信トレイから today に移動した瞬間を「取り掛かりを意識した瞬間」と定義し、🚀 ボタンを押すまでの遅延（time-to-start）と、🚀 から松竹梅完了までの所要時間（workedMinutes）を記録する。
+
+### 技術的決定事項
+- **🚀 押下は任意**：ADHD は「いきなり始めて気づいたら終わってた」ケースも多いため、押さずに直接松竹梅タップも許容。その場合は workedMinutes/timeToStartSeconds は null。
+- **🔵 と 🔥 で計測カラムを分離**：🔥 は既存 `timer_started_at` がカウントダウン用に固定されているため、🔵 用に別途 `blue_started_at` を新設。意味論を混ぜない。
+- **取り掛かりラグの起点 = moveToToday**：「今日やる」と決めた瞬間からの遅延が ADHD 当事者にとって最も意味のある計測対象。inbox 作成時刻ではない。
+- **`continued`** カラム：PR-A では「完了に到達 = 継続成功」とみなし `true` のみ記録。中断ボタンによる `false` 記録は後続 PR で。
+
+### 残課題・次のステップ
+- **PR-B**: Vercel `/api/ai` サーバレス関数 + DeepSeek 統合。`moveToToday` 時に AI 見積もり（時間・難易度・抵抗感）を自動取得し、TodayTaskCard に EstimateChip 表示。
+- **PR-C**: 完了時の AI フィードバックモーダル。見積もり vs 実測のギャップを優しく解説。
+- 中断ボタン UI（`continued = false` 記録）。
+- ログタブの集計に「見積もり精度」「平均取り掛かりラグ」追加。
+
+---
+
 ## 2026-05-23: 作業中離脱抑止（バナー + 復帰ポップアップ）
 **ブランチ:** claude/focus-drift-3a7k
 

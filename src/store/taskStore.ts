@@ -25,6 +25,8 @@ interface TaskState {
   // 画面2: 今日やる
   moveToToday: (id: string) => Promise<void>;
   moveToInbox: (id: string) => Promise<void>;
+  // 🔵 「🚀 始める」押下（取り掛かり時刻を記録）
+  startBlueTask: (id: string) => Promise<void>;
   // 🔵 松竹梅達成
   completeShojikubai: (id: string, tier: ShojikubaiTier) => Promise<void>;
   // 🔥 ブレーキタイマー
@@ -83,6 +85,10 @@ export const useTaskStore = create<TaskState>((set, get) => ({
       timerMinutes: null,
       timerStartedAt: null,
       workedMinutes: null,
+      movedToTodayAt: null,
+      blueStartedAt: null,
+      timeToStartSeconds: null,
+      continued: null,
       completedAt: null,
       createdAt: now,
       updatedAt: now,
@@ -114,7 +120,14 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     const task = get().tasks.find((t) => t.id === id);
     if (!task) return;
 
-    const updated: Task = { ...task, status: 'today', updatedAt: Date.now() };
+    const now = Date.now();
+    // 取り掛かりラグの起点を記録（🔵 の計測ループ）
+    const updated: Task = {
+      ...task,
+      status: 'today',
+      movedToTodayAt: now,
+      updatedAt: now,
+    };
     set((s) => ({
       tasks: s.tasks.filter((t) => t.id !== id),
       todayTasks: [...s.todayTasks, updated],
@@ -122,7 +135,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     await updateTask(updated);
   },
 
-  // today → inbox（タイマーもリセット）
+  // today → inbox（タイマーもリセット。計測値も破棄）
   moveToInbox: async (id: string) => {
     const task = get().todayTasks.find((t) => t.id === id);
     if (!task) return;
@@ -131,11 +144,37 @@ export const useTaskStore = create<TaskState>((set, get) => ({
       ...task,
       status: 'inbox',
       timerStartedAt: null,
+      movedToTodayAt: null,
+      blueStartedAt: null,
+      timeToStartSeconds: null,
       updatedAt: Date.now(),
     };
     set((s) => ({
       todayTasks: s.todayTasks.filter((t) => t.id !== id),
       tasks: [...s.tasks, updated],
+    }));
+    await updateTask(updated);
+  },
+
+  // 🔵 「🚀 始める」（取り掛かり時刻 + 取り掛かりラグを記録）
+  startBlueTask: async (id: string) => {
+    const task = get().todayTasks.find((t) => t.id === id);
+    if (!task || task.blueStartedAt !== null) return;
+
+    const now = Date.now();
+    const lagSec =
+      task.movedToTodayAt !== null
+        ? Math.max(0, Math.round((now - task.movedToTodayAt) / 1000))
+        : null;
+
+    const updated: Task = {
+      ...task,
+      blueStartedAt: now,
+      timeToStartSeconds: lagSec,
+      updatedAt: now,
+    };
+    set((s) => ({
+      todayTasks: s.todayTasks.map((t) => (t.id === id ? updated : t)),
     }));
     await updateTask(updated);
   },
@@ -146,10 +185,19 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     if (!task) return;
 
     const now = Date.now();
+    // 🚀 押下済みなら実測分数を計算（最低1分）。押してなければ null のまま。
+    const worked =
+      task.blueStartedAt !== null
+        ? Math.max(1, Math.round((now - task.blueStartedAt) / 60_000))
+        : null;
+
     const updated: Task = {
       ...task,
       status: 'done',
       completedTier: tier,
+      workedMinutes: worked,
+      // 中断機能は後続。完了到達 = 継続成功とみなす
+      continued: task.blueStartedAt !== null ? true : null,
       completedAt: now,
       updatedAt: now,
     };

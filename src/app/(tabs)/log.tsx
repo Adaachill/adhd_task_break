@@ -19,17 +19,33 @@ function DoneRow({ task }: { task: Task }) {
   const { fs } = useLayout();
   const isFire = task.type === 'fire';
   const badge = task.completedTier ? TIER_BADGE[task.completedTier] : null;
+  const hasLag = !isFire && task.timeToStartSeconds != null;
 
   return (
     <View style={styles.row}>
       <Text style={[styles.check, { fontSize: fs.body }]}>✅</Text>
-      <Text style={[styles.rowText, { fontSize: fs.body }]} numberOfLines={2}>
-        {task.text}
-      </Text>
+      <View style={styles.rowMain}>
+        <Text style={[styles.rowText, { fontSize: fs.body }]} numberOfLines={2}>
+          {task.text}
+        </Text>
+        {hasLag && (
+          <Text style={[styles.rowSub, { fontSize: fs.caption }]}>
+            🚀 取り掛かりまで {formatLag(task.timeToStartSeconds!)}
+          </Text>
+        )}
+      </View>
       {isFire && task.workedMinutes != null && (
         <View style={[styles.badge, { backgroundColor: 'rgba(255,90,110,0.18)' }]}>
           <Text style={[styles.badgeTxt, { color: colors.fireFrom, fontSize: fs.caption }]}>
             🔥 {task.workedMinutes}分
+          </Text>
+        </View>
+      )}
+      {/* 🔵 で 🚀 押下した場合の実測表示 */}
+      {!isFire && task.workedMinutes != null && (
+        <View style={[styles.badge, { backgroundColor: 'rgba(91,141,239,0.18)' }]}>
+          <Text style={[styles.badgeTxt, { color: colors.blue, fontSize: fs.caption }]}>
+            ⏱ {task.workedMinutes}分
           </Text>
         </View>
       )}
@@ -42,6 +58,13 @@ function DoneRow({ task }: { task: Task }) {
       )}
     </View>
   );
+}
+
+function formatLag(sec: number): string {
+  if (sec < 60) return `${sec}秒`;
+  const m = Math.floor(sec / 60);
+  if (m < 60) return `${m}分`;
+  return `${Math.floor(m / 60)}時間${m % 60}分`;
 }
 
 export default function LogScreen() {
@@ -176,10 +199,16 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   check: {},
-  rowText: {
+  rowMain: {
     flex: 1,
+    gap: 2,
+  },
+  rowText: {
     color: colors.text,
     fontWeight: '500',
+  },
+  rowSub: {
+    color: colors.textSecondary,
   },
   badge: {
     paddingHorizontal: spacing.sm,
