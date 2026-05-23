@@ -15,15 +15,16 @@ import { colors } from '@/theme/tokens';
 
 export default function RootLayout() {
   const loadInbox = useTaskStore((s) => s.loadInbox);
-
   const loadToday = useTaskStore((s) => s.loadToday);
+  const loadDoneToday = useTaskStore((s) => s.loadDoneToday);
 
   const { driftedTask, dismissDrift } = useFocusDriftDetection();
 
   useEffect(() => {
-    // DB を開いてマイグレーション → 受信トレイ・今日タスク復元
-    void getDb().then(() => Promise.all([loadInbox(), loadToday()]));
-  }, [loadInbox, loadToday]);
+    // DB を開いてマイグレーション → 受信トレイ・今日タスク・本日完了を復元
+    // 完了履歴は AI 見積もりの過去データとして使うため起動時に読む
+    void getDb().then(() => Promise.all([loadInbox(), loadToday(), loadDoneToday()]));
+  }, [loadInbox, loadToday, loadDoneToday]);
 
   return (
     <SafeAreaProvider>

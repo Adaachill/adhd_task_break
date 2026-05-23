@@ -1,5 +1,49 @@
 # 開発履歴
 
+## 2026-05-23: DeepSeek AI 統合 + 🔵 タスクの見積もり機能 — PR-B
+**ブランチ:** claude/deepseek-estimate-9k4p
+
+### 変更内容
+- `api/ai.ts`: 新規 Vercel Edge Function。DeepSeek `/chat/completions` への proxy。`DEEPSEEK_API_KEY` をサーバ側で保持。レート制限（IP 1分20回）・タイムアウト 8s・`response_format: json_object`。
+- `src/services/ai/deepseek.ts`: クライアント側ラッパ。`estimateTask(text, history, aiEnabled)` を提供。`EXPO_PUBLIC_AI_BASE_URL` で dev 環境のエンドポイント上書き可。失敗・タイムアウト時は `null` を返す（フェイルソフト）。
+- `src/services/ai/types.ts`: `TaskEstimate` / `AiHistoryEntry` 型。
+- `src/types/task.ts`: `estimatedMinutes` / `estimatedDifficulty` / `estimatedResistance` / `estimateRationale` / `estimateSource` を追加。
+- `src/db/index.ts`: 上記5カラムを `ALTER TABLE` で追加。
+- `src/db/taskRepo.ts`: insert/update/行マッパを新フィールド対応。
+- `src/store/taskStore.ts`:
+  - `moveToToday` で 🔵 かつ AI 有効時に `requestBlueEstimate` を fire-and-forget 起動。
+  - 過去完了10件を `AiHistoryEntry[]` に整形して履歴として渡す（楽観バイアス補正用）。
+  - `useEstimatingIds` ストアでローディング中タスク id を管理。
+  - `moveToInbox` でも見積もり値は保持（再昇格時に流用）。
+- `src/features/today/EstimateChip.tsx`: 新規。「⚡ AI見積もり：約 ◯分／難易度 ▓▓▓░░／抵抗感 ▓▓▓▓░」+ rationale を表示。推定中は dashed border の loading 表示。AI 失敗時は無表示に降格。
+- `src/features/today/TodayTaskCard.tsx`: 🔵 表示時に `<EstimateChip>` を 🚀 始める の上に配置。
+- `src/app/_layout.tsx`: 起動時に `loadDoneToday` も実行（AI に渡す履歴データを事前に揃える）。
+
+### 変更意図・背景
+ADHD の「見積もり甘い」課題に対する AI 補助。過去履歴を使って楽観バイアスを補正させる。DeepSeek を選んだのはコスト（input $0.27/M, output $1.10/M。1見積もり ≈ 0.03円）と OpenAI 互換 API（実装容易）の組み合わせ。
+
+### 技術的決定事項
+- **Vercel Edge Function proxy** を選択。API キーをクライアントに露出させない設計。`EXPO_PUBLIC_*` でビルドに埋め込む案は却下。
+- **fire-and-forget**：moveToToday の応答性を落とさないため await しない。結果到着時に楽観的更新。
+- **フェイルソフト**：AI 失敗時は EstimateChip が無表示になるだけで、🚀 / 松竹梅は通常通り動く。
+- **見積もりは保持**：moveToInbox しても見積もりは消さない（再昇格時に API コール節約）。
+- **履歴 10 件**：トークン消費を抑えつつユーザ固有の傾向を学習させる妥協点。
+- **response_format: json_object** を DeepSeek に指定し、JSON パースの失敗率を最小化。型ガードで shape を検証、不正なら null。
+- **レート制限はベストエフォート**：Edge ランタイムはリージョン分散で in-memory Map は完全ではないが、暴発防止には十分。
+
+### Vercel デプロイ手順
+1. Vercel ダッシュボードで `DEEPSEEK_API_KEY` を Environment Variables に追加（Production / Preview / Development 全環境）。
+2. 任意で `DEEPSEEK_API_URL` / `DEEPSEEK_MODEL` を上書き設定可能。
+3. デプロイ後、`/api/ai` が叩けるようになる。
+
+### 残課題・次のステップ
+- **PR-C**: 完了時 AI フィードバックモーダル（generateFeedback）。
+- ユーザによる見積もり値の手動修正 UI（estimateSource='manual'）。
+- ログタブで「今日の見積もり精度 ◯%」集計表示。
+- レート制限を KV / Upstash Redis に移行（多リージョン共有）。
+
+---
+
 ## 2026-05-23: 🔵 タスクの計測ループ（取り掛かりラグ + 実測分数）— PR-A
 **ブランチ:** claude/blue-measure-7m2f
 

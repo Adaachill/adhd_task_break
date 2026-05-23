@@ -47,6 +47,13 @@ export interface Task {
   // 中断せず最後までやれたか（PR-A では常に true 想定、中断機能は後続）
   continued: boolean | null;
 
+  // ── AI 見積もり（PR-B） ──
+  estimatedMinutes: number | null;
+  estimatedDifficulty: number | null;     // 1-5
+  estimatedResistance: number | null;     // 1-5
+  estimateRationale: string | null;
+  estimateSource: 'ai' | 'manual' | null;
+
   completedAt: number | null; // 完了エポックms
   createdAt: number; // epoch ms
   updatedAt: number; // epoch ms
