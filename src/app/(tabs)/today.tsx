@@ -1,49 +1,83 @@
-import { useCallback, useEffect, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ActiveSessionBanner } from '@/features/today/ActiveSessionBanner';
 import { TaskPickerModal } from '@/features/today/TaskPickerModal';
+import { TaskSuggestRow } from '@/features/today/TaskSuggestRow';
 import { TodayTaskCard } from '@/features/today/TodayTaskCard';
 import { useLayout } from '@/hooks/useLayout';
 import { requestPermissions } from '@/services/notifications';
 import { useTaskStore } from '@/store/taskStore';
 import { colors, radius, spacing } from '@/theme/tokens';
+import type { Task } from '@/types/task';
 
 const MAX_TODAY = 3;
 
 type TabType = 'once' | 'habit';
 
 export default function TodayScreen() {
-  const { todayTasks, loadToday } = useTaskStore();
+  const { todayTasks, tasks: inboxTasks, loadToday, loadInbox } = useTaskStore();
   const { fs, isDesktop } = useLayout();
 
   const [tab, setTab] = useState<TabType>('once');
   const [pickerVisible, setPickerVisible] = useState(false);
+  const [taskOrder, setTaskOrder] = useState<string[]>([]);
 
   useEffect(() => {
     void loadToday();
+    void loadInbox();
     void requestPermissions();
-  }, [loadToday]);
+  }, [loadToday, loadInbox]);
 
   const filteredTasks = todayTasks.filter((t) =>
     tab === 'habit' ? t.isHabit : !t.isHabit
   );
+
+  // Sync taskOrder when filteredTasks changes
+  useEffect(() => {
+    setTaskOrder((prev) => {
+      const currentIds = new Set(filteredTasks.map((t) => t.id));
+      const kept = prev.filter((id) => currentIds.has(id));
+      const added = filteredTasks.filter((t) => !prev.includes(t.id)).map((t) => t.id);
+      return [...kept, ...added];
+    });
+  }, [filteredTasks]);
+
+  const orderedTasks = taskOrder
+    .map((id) => filteredTasks.find((t) => t.id === id))
+    .filter((t): t is Task => t !== undefined);
+
   const canAdd = filteredTasks.length < MAX_TODAY;
 
-  const renderEmptySlots = useCallback(() => {
-    const slots = MAX_TODAY - filteredTasks.length;
-    return Array.from({ length: slots }, (_, i) => (
-      <Pressable
-        key={`empty-${i}`}
-        style={({ pressed }) => [styles.emptySlot, { opacity: pressed ? 0.7 : 1 }]}
-        onPress={() => setPickerVisible(true)}
-        disabled={!canAdd && i > 0}>
-        <Text style={[styles.emptyIcon, { fontSize: fs.title }]}>＋</Text>
-        <Text style={[styles.emptyTxt, { fontSize: fs.small }]}>吐き出しから選ぶ</Text>
-      </Pressable>
-    ));
-  }, [filteredTasks.length, canAdd, fs]);
+  const moveTaskUp = (index: number) => {
+    if (index <= 0) return;
+    setTaskOrder((prev) => {
+      const taskIds = orderedTasks.map((t) => t.id);
+      const next = [...prev];
+      const idxA = prev.indexOf(taskIds[index - 1]);
+      const idxB = prev.indexOf(taskIds[index]);
+      if (idxA >= 0 && idxB >= 0) [next[idxA], next[idxB]] = [next[idxB], next[idxA]];
+      return next;
+    });
+  };
+
+  const moveTaskDown = (index: number) => {
+    if (index >= orderedTasks.length - 1) return;
+    setTaskOrder((prev) => {
+      const taskIds = orderedTasks.map((t) => t.id);
+      const next = [...prev];
+      const idxA = prev.indexOf(taskIds[index]);
+      const idxB = prev.indexOf(taskIds[index + 1]);
+      if (idxA >= 0 && idxB >= 0) [next[idxA], next[idxB]] = [next[idxB], next[idxA]];
+      return next;
+    });
+  };
+
+  const inboxForTab = inboxTasks.filter((t) =>
+    tab === 'habit' ? t.isHabit : !t.isHabit
+  );
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -75,12 +109,26 @@ export default function TodayScreen() {
           ))}
         </View>
 
-        {/* タスクカード + 空枠 */}
+        {/* タスクカード + 候補リスト */}
         <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
-          {filteredTasks.map((task) => (
-            <TodayTaskCard key={task.id} task={task} />
+          {orderedTasks.map((task, index) => (
+            <TodayTaskCard
+              key={task.id}
+              task={task}
+              canMoveUp={index > 0}
+              canMoveDown={index < orderedTasks.length - 1}
+              onMoveUp={() => moveTaskUp(index)}
+              onMoveDown={() => moveTaskDown(index)}
+            />
           ))}
-          {renderEmptySlots()}
+
+          {canAdd && (
+            <TaskSuggestRow
+              tasks={inboxForTab}
+              emptySlots={MAX_TODAY - filteredTasks.length}
+              onSelectMore={() => setPickerVisible(true)}
+            />
+          )}
         </ScrollView>
 
         {/* 残り枠数表示 */}
@@ -97,7 +145,7 @@ export default function TodayScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1 },
+  safe: { flex: 1, backgroundColor: colors.bgTop },
   container: { flex: 1 },
   containerDesktop: {
     maxWidth: 720,
@@ -110,7 +158,8 @@ const styles = StyleSheet.create({
   },
   title: {
     color: colors.text,
-    fontWeight: '700',
+    fontWeight: '800',
+    letterSpacing: 0.3,
   },
   tabRow: {
     flexDirection: 'row',
@@ -137,23 +186,6 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingHorizontal: spacing.lg,
     paddingBottom: spacing.xl,
-  },
-  emptySlot: {
-    borderWidth: 1.5,
-    borderColor: colors.border,
-    borderStyle: 'dashed',
-    borderRadius: radius.lg,
-    padding: spacing.xl,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: spacing.md,
-    gap: spacing.sm,
-  },
-  emptyIcon: {
-    color: colors.textSecondary,
-  },
-  emptyTxt: {
-    color: colors.textSecondary,
   },
   footer: {
     alignItems: 'center',
