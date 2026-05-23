@@ -15,6 +15,10 @@ interface TaskRow {
   timer_minutes: number | null;
   timer_started_at: number | null;
   worked_minutes: number | null;
+  moved_to_today_at: number | null;
+  blue_started_at: number | null;
+  time_to_start_seconds: number | null;
+  continued: number | null;
   completed_at: number | null;
   created_at: number;
   updated_at: number;
@@ -34,6 +38,10 @@ function rowToTask(r: TaskRow): Task {
     timerMinutes: r.timer_minutes,
     timerStartedAt: r.timer_started_at,
     workedMinutes: r.worked_minutes,
+    movedToTodayAt: r.moved_to_today_at,
+    blueStartedAt: r.blue_started_at,
+    timeToStartSeconds: r.time_to_start_seconds,
+    continued: r.continued === null ? null : r.continued === 1,
     completedAt: r.completed_at,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
@@ -46,8 +54,9 @@ export async function insertTask(task: Task): Promise<void> {
     `INSERT INTO tasks
        (id, text, type, due, is_habit, status, classify_source,
         shojikubai, completed_tier, timer_minutes, timer_started_at, worked_minutes,
+        moved_to_today_at, blue_started_at, time_to_start_seconds, continued,
         completed_at, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       task.id,
       task.text,
@@ -61,6 +70,10 @@ export async function insertTask(task: Task): Promise<void> {
       task.timerMinutes,
       task.timerStartedAt,
       task.workedMinutes,
+      task.movedToTodayAt,
+      task.blueStartedAt,
+      task.timeToStartSeconds,
+      task.continued === null ? null : task.continued ? 1 : 0,
       task.completedAt,
       task.createdAt,
       task.updatedAt,
@@ -100,7 +113,8 @@ export async function updateTask(task: Task): Promise<void> {
     `UPDATE tasks
      SET text = ?, type = ?, due = ?, is_habit = ?, status = ?, classify_source = ?,
          shojikubai = ?, completed_tier = ?, timer_minutes = ?, timer_started_at = ?,
-         worked_minutes = ?, completed_at = ?, updated_at = ?
+         worked_minutes = ?, moved_to_today_at = ?, blue_started_at = ?,
+         time_to_start_seconds = ?, continued = ?, completed_at = ?, updated_at = ?
      WHERE id = ?`,
     [
       task.text,
@@ -114,6 +128,10 @@ export async function updateTask(task: Task): Promise<void> {
       task.timerMinutes,
       task.timerStartedAt,
       task.workedMinutes,
+      task.movedToTodayAt,
+      task.blueStartedAt,
+      task.timeToStartSeconds,
+      task.continued === null ? null : task.continued ? 1 : 0,
       task.completedAt,
       task.updatedAt,
       task.id,
