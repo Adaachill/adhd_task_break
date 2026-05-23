@@ -54,3 +54,31 @@ export async function cancelNotification(id: string): Promise<void> {
     // ignore
   }
 }
+
+/**
+ * 作業中離脱抑止のローカル通知をスケジュール（spec ⑥）。
+ * バックグラウンド遷移時に呼び、復帰時に必ず `cancelNotification` でキャンセルする。
+ */
+export async function scheduleDriftNotification(
+  taskText: string,
+  delayMs = 10_000
+): Promise<string | null> {
+  if (Platform.OS === 'web') return null;
+  try {
+    const id = await Notifications.scheduleNotificationAsync({
+      content: {
+        title: '👀 作業中です',
+        body: `「${taskText}」の作業中。関連ありますか？戻りましょう。`,
+        sound: true,
+        priority: Notifications.AndroidNotificationPriority.HIGH,
+      },
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.DATE,
+        date: new Date(Date.now() + delayMs),
+      },
+    });
+    return id;
+  } catch {
+    return null;
+  }
+}

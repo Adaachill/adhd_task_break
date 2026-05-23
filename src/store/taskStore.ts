@@ -1,6 +1,8 @@
 import { create } from 'zustand';
 
 import { insertTask, listDoneBetween, listInbox, listToday, updateTask } from '@/db/taskRepo';
+import { estimateTask as aiEstimateTask } from '@/services/ai/deepseek';
+import type { AiHistoryEntry } from '@/services/ai/types';
 import { classify } from '@/services/classify';
 import type { ClassificationPatch, ShojikubaiTier, Task } from '@/types/task';
 
@@ -25,6 +27,8 @@ interface TaskState {
   // 画面2: 今日やる
   moveToToday: (id: string) => Promise<void>;
   moveToInbox: (id: string) => Promise<void>;
+  // 🔵 「🚀 始める」押下（取り掛かり時刻を記録）
+  startBlueTask: (id: string) => Promise<void>;
   // 🔵 松竹梅達成
   completeShojikubai: (id: string, tier: ShojikubaiTier) => Promise<void>;
   // 🔥 ブレーキタイマー
@@ -83,6 +87,15 @@ export const useTaskStore = create<TaskState>((set, get) => ({
       timerMinutes: null,
       timerStartedAt: null,
       workedMinutes: null,
+      movedToTodayAt: null,
+      blueStartedAt: null,
+      timeToStartSeconds: null,
+      continued: null,
+      estimatedMinutes: null,
+      estimatedDifficulty: null,
+      estimatedResistance: null,
+      estimateRationale: null,
+      estimateSource: null,
       completedAt: null,
       createdAt: now,
       updatedAt: now,
@@ -114,15 +127,27 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     const task = get().tasks.find((t) => t.id === id);
     if (!task) return;
 
-    const updated: Task = { ...task, status: 'today', updatedAt: Date.now() };
+    const now = Date.now();
+    // 取り掛かりラグの起点を記録（🔵 の計測ループ）
+    const updated: Task = {
+      ...task,
+      status: 'today',
+      movedToTodayAt: now,
+      updatedAt: now,
+    };
     set((s) => ({
       tasks: s.tasks.filter((t) => t.id !== id),
       todayTasks: [...s.todayTasks, updated],
     }));
     await updateTask(updated);
+
+    // 🔵 のみ AI 見積もり（fire-and-forget。失敗は UI 側で無表示に降格）
+    if (updated.type === 'blue' && get().aiEnabled && updated.estimatedMinutes === null) {
+      void requestBlueEstimate(updated, get, set);
+    }
   },
 
-  // today → inbox（タイマーもリセット）
+  // today → inbox（タイマーもリセット。計測値も破棄）
   moveToInbox: async (id: string) => {
     const task = get().todayTasks.find((t) => t.id === id);
     if (!task) return;
@@ -131,11 +156,38 @@ export const useTaskStore = create<TaskState>((set, get) => ({
       ...task,
       status: 'inbox',
       timerStartedAt: null,
+      movedToTodayAt: null,
+      blueStartedAt: null,
+      timeToStartSeconds: null,
+      // 見積もりは保持（再昇格時に流用）
       updatedAt: Date.now(),
     };
     set((s) => ({
       todayTasks: s.todayTasks.filter((t) => t.id !== id),
       tasks: [...s.tasks, updated],
+    }));
+    await updateTask(updated);
+  },
+
+  // 🔵 「🚀 始める」（取り掛かり時刻 + 取り掛かりラグを記録）
+  startBlueTask: async (id: string) => {
+    const task = get().todayTasks.find((t) => t.id === id);
+    if (!task || task.blueStartedAt !== null) return;
+
+    const now = Date.now();
+    const lagSec =
+      task.movedToTodayAt !== null
+        ? Math.max(0, Math.round((now - task.movedToTodayAt) / 1000))
+        : null;
+
+    const updated: Task = {
+      ...task,
+      blueStartedAt: now,
+      timeToStartSeconds: lagSec,
+      updatedAt: now,
+    };
+    set((s) => ({
+      todayTasks: s.todayTasks.map((t) => (t.id === id ? updated : t)),
     }));
     await updateTask(updated);
   },
@@ -146,10 +198,19 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     if (!task) return;
 
     const now = Date.now();
+    // 🚀 押下済みなら実測分数を計算（最低1分）。押してなければ null のまま。
+    const worked =
+      task.blueStartedAt !== null
+        ? Math.max(1, Math.round((now - task.blueStartedAt) / 60_000))
+        : null;
+
     const updated: Task = {
       ...task,
       status: 'done',
       completedTier: tier,
+      workedMinutes: worked,
+      // 中断機能は後続。完了到達 = 継続成功とみなす
+      continued: task.blueStartedAt !== null ? true : null,
       completedAt: now,
       updatedAt: now,
     };
@@ -227,3 +288,64 @@ export const useTaskStore = create<TaskState>((set, get) => ({
 
 // 通知IDのメモリキャッシュ（再起動時は失われるが、タイマー停止時のキャンセルに使う）
 export const notifMap = new Map<string, string>();
+
+// AI 見積もり中のタスク id（再起動でクリア）。UI のローディング表示用。
+export const useEstimatingIds = create<{ ids: Set<string>; mark: (id: string, on: boolean) => void }>((set) => ({
+  ids: new Set(),
+  mark: (id, on) =>
+    set((s) => {
+      const next = new Set(s.ids);
+      if (on) next.add(id);
+      else next.delete(id);
+      return { ids: next };
+    }),
+}));
+
+/**
+ * 直近完了タスクから AI に渡す履歴を組み立てる（最大10件）。
+ * 「見積もり vs 実測」の傾向を学習させ、ユーザ固有の楽観バイアスを補正させる狙い。
+ */
+function buildHistory(doneTasks: Task[]): AiHistoryEntry[] {
+  return doneTasks.slice(0, 10).map((t) => ({
+    text: t.text,
+    estimatedMinutes: t.estimatedMinutes,
+    workedMinutes: t.workedMinutes,
+    completedTier: t.completedTier,
+  }));
+}
+
+/**
+ * AI 見積もりを取得して DB / store に反映。失敗時は何もしない（UI は無表示に降格）。
+ */
+async function requestBlueEstimate(
+  task: Task,
+  get: () => TaskState,
+  set: (partial: Partial<TaskState> | ((s: TaskState) => Partial<TaskState>)) => void
+): Promise<void> {
+  useEstimatingIds.getState().mark(task.id, true);
+  try {
+    const history = buildHistory(get().doneTasks);
+    const result = await aiEstimateTask(task.text, history, get().aiEnabled);
+    if (!result) return;
+
+    const fresh = get().todayTasks.find((t) => t.id === task.id);
+    // 移動して別ステータスになっていたら反映を捨てる
+    if (!fresh || fresh.status !== 'today') return;
+
+    const updated: Task = {
+      ...fresh,
+      estimatedMinutes: result.estimatedMinutes,
+      estimatedDifficulty: result.estimatedDifficulty,
+      estimatedResistance: result.estimatedResistance,
+      estimateRationale: result.rationale,
+      estimateSource: 'ai',
+      updatedAt: Date.now(),
+    };
+    set((s) => ({
+      todayTasks: s.todayTasks.map((t) => (t.id === task.id ? updated : t)),
+    }));
+    await updateTask(updated);
+  } finally {
+    useEstimatingIds.getState().mark(task.id, false);
+  }
+}

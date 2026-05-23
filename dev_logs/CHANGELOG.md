@@ -1,5 +1,110 @@
 # 開発履歴
 
+## 2026-05-23: DeepSeek AI 統合 + 🔵 タスクの見積もり機能 — PR-B
+**ブランチ:** claude/deepseek-estimate-9k4p
+
+### 変更内容
+- `api/ai.ts`: 新規 Vercel Edge Function。DeepSeek `/chat/completions` への proxy。`DEEPSEEK_API_KEY` をサーバ側で保持。レート制限（IP 1分20回）・タイムアウト 8s・`response_format: json_object`。
+- `src/services/ai/deepseek.ts`: クライアント側ラッパ。`estimateTask(text, history, aiEnabled)` を提供。`EXPO_PUBLIC_AI_BASE_URL` で dev 環境のエンドポイント上書き可。失敗・タイムアウト時は `null` を返す（フェイルソフト）。
+- `src/services/ai/types.ts`: `TaskEstimate` / `AiHistoryEntry` 型。
+- `src/types/task.ts`: `estimatedMinutes` / `estimatedDifficulty` / `estimatedResistance` / `estimateRationale` / `estimateSource` を追加。
+- `src/db/index.ts`: 上記5カラムを `ALTER TABLE` で追加。
+- `src/db/taskRepo.ts`: insert/update/行マッパを新フィールド対応。
+- `src/store/taskStore.ts`:
+  - `moveToToday` で 🔵 かつ AI 有効時に `requestBlueEstimate` を fire-and-forget 起動。
+  - 過去完了10件を `AiHistoryEntry[]` に整形して履歴として渡す（楽観バイアス補正用）。
+  - `useEstimatingIds` ストアでローディング中タスク id を管理。
+  - `moveToInbox` でも見積もり値は保持（再昇格時に流用）。
+- `src/features/today/EstimateChip.tsx`: 新規。「⚡ AI見積もり：約 ◯分／難易度 ▓▓▓░░／抵抗感 ▓▓▓▓░」+ rationale を表示。推定中は dashed border の loading 表示。AI 失敗時は無表示に降格。
+- `src/features/today/TodayTaskCard.tsx`: 🔵 表示時に `<EstimateChip>` を 🚀 始める の上に配置。
+- `src/app/_layout.tsx`: 起動時に `loadDoneToday` も実行（AI に渡す履歴データを事前に揃える）。
+
+### 変更意図・背景
+ADHD の「見積もり甘い」課題に対する AI 補助。過去履歴を使って楽観バイアスを補正させる。DeepSeek を選んだのはコスト（input $0.27/M, output $1.10/M。1見積もり ≈ 0.03円）と OpenAI 互換 API（実装容易）の組み合わせ。
+
+### 技術的決定事項
+- **Vercel Edge Function proxy** を選択。API キーをクライアントに露出させない設計。`EXPO_PUBLIC_*` でビルドに埋め込む案は却下。
+- **fire-and-forget**：moveToToday の応答性を落とさないため await しない。結果到着時に楽観的更新。
+- **フェイルソフト**：AI 失敗時は EstimateChip が無表示になるだけで、🚀 / 松竹梅は通常通り動く。
+- **見積もりは保持**：moveToInbox しても見積もりは消さない（再昇格時に API コール節約）。
+- **履歴 10 件**：トークン消費を抑えつつユーザ固有の傾向を学習させる妥協点。
+- **response_format: json_object** を DeepSeek に指定し、JSON パースの失敗率を最小化。型ガードで shape を検証、不正なら null。
+- **レート制限はベストエフォート**：Edge ランタイムはリージョン分散で in-memory Map は完全ではないが、暴発防止には十分。
+
+### Vercel デプロイ手順
+1. Vercel ダッシュボードで `DEEPSEEK_API_KEY` を Environment Variables に追加（Production / Preview / Development 全環境）。
+2. 任意で `DEEPSEEK_API_URL` / `DEEPSEEK_MODEL` を上書き設定可能。
+3. デプロイ後、`/api/ai` が叩けるようになる。
+
+### 残課題・次のステップ
+- **PR-C**: 完了時 AI フィードバックモーダル（generateFeedback）。
+- ユーザによる見積もり値の手動修正 UI（estimateSource='manual'）。
+- ログタブで「今日の見積もり精度 ◯%」集計表示。
+- レート制限を KV / Upstash Redis に移行（多リージョン共有）。
+
+---
+
+## 2026-05-23: 🔵 タスクの計測ループ（取り掛かりラグ + 実測分数）— PR-A
+**ブランチ:** claude/blue-measure-7m2f
+
+### 変更内容
+- `src/types/task.ts`: `movedToTodayAt` / `blueStartedAt` / `timeToStartSeconds` / `continued` を追加。
+- `src/db/index.ts`: 上記4カラムを `ALTER TABLE` で追加（既存パターン踏襲）。
+- `src/db/taskRepo.ts`: 行マッパ・insert・update を新フィールド対応。
+- `src/store/taskStore.ts`:
+  - `moveToToday` で `movedToTodayAt = now` を記録（取り掛かりラグの起点）。
+  - 新 `startBlueTask(id)` で `blueStartedAt` 記録 + `timeToStartSeconds` 計算。
+  - `completeShojikubai` で 🚀 押下済みなら `workedMinutes = (now - blueStartedAt)/60s`、`continued = true` を保存。押してなければ null のまま。
+  - `moveToInbox` で計測値をリセット。
+- `src/features/today/StartTaskButton.tsx`: 新規。🔵 用「🚀 始める」ボタン。押下後は経過時間 mm:ss を pill で表示。
+- `src/features/today/TodayTaskCard.tsx`: 🔵 表示時に `<StartTaskButton>` を 松竹梅ボタンの上に配置。
+- `src/app/(tabs)/log.tsx`: 🔵 で 🚀 押下済みのものは「⏱ ◯分」バッジと「🚀 取り掛かりまで ◯◯」サブテキストを表示。
+
+### 変更意図・背景
+ADHD の3課題（① 見積もり甘い、② 取り掛かりに時間、③ 気が散る）に対し、まずは「測ること」だけで効用を出す PR-A。AI 抜きで実測ループを動かす。受信トレイから today に移動した瞬間を「取り掛かりを意識した瞬間」と定義し、🚀 ボタンを押すまでの遅延（time-to-start）と、🚀 から松竹梅完了までの所要時間（workedMinutes）を記録する。
+
+### 技術的決定事項
+- **🚀 押下は任意**：ADHD は「いきなり始めて気づいたら終わってた」ケースも多いため、押さずに直接松竹梅タップも許容。その場合は workedMinutes/timeToStartSeconds は null。
+- **🔵 と 🔥 で計測カラムを分離**：🔥 は既存 `timer_started_at` がカウントダウン用に固定されているため、🔵 用に別途 `blue_started_at` を新設。意味論を混ぜない。
+- **取り掛かりラグの起点 = moveToToday**：「今日やる」と決めた瞬間からの遅延が ADHD 当事者にとって最も意味のある計測対象。inbox 作成時刻ではない。
+- **`continued`** カラム：PR-A では「完了に到達 = 継続成功」とみなし `true` のみ記録。中断ボタンによる `false` 記録は後続 PR で。
+
+### 残課題・次のステップ
+- **PR-B**: Vercel `/api/ai` サーバレス関数 + DeepSeek 統合。`moveToToday` 時に AI 見積もり（時間・難易度・抵抗感）を自動取得し、TodayTaskCard に EstimateChip 表示。
+- **PR-C**: 完了時の AI フィードバックモーダル。見積もり vs 実測のギャップを優しく解説。
+- 中断ボタン UI（`continued = false` 記録）。
+- ログタブの集計に「見積もり精度」「平均取り掛かりラグ」追加。
+
+---
+
+## 2026-05-23: 作業中離脱抑止（バナー + 復帰ポップアップ）
+**ブランチ:** claude/focus-drift-3a7k
+
+### 変更内容
+- `src/hooks/useFocusDriftDetection.ts`: 新規。AppState（native）/ `visibilitychange`（web）でバックグラウンド遷移を検知。🔥 ブレーキタイマー実行中のみ動作し、復帰までの時間が閾値（5秒）以上なら離脱とみなす。
+- `src/features/today/FocusDriftPopup.tsx`: 復帰時のモーダル「戻ってきましたね／そのまま続ける／中断する」。
+- `src/features/today/ActiveSessionBanner.tsx`: 画面2上部に固定表示する作業中バナー「🔥 作業中：〇〇 — 残り MM:SS」。
+- `src/services/notifications/index.ts`: `scheduleDriftNotification(taskText, delayMs)` を追加。バックグラウンド遷移時に遅延発火させ、復帰時に必ずキャンセル。
+- `src/app/_layout.tsx`: `useFocusDriftDetection` をルートにマウントし、`<FocusDriftPopup>` をグローバルモーダルとして配置。
+- `src/app/(tabs)/today.tsx`: `<ActiveSessionBanner />` をヘッダー直下に配置。
+
+### 変更意図・背景
+spec ⑥「作業中離脱抑止」の MVP 実装。ADHD の過集中・タスクすり替えを防ぐため、🔥 タイマー走行中に他アプリへ切り替わった場合に通知＋復帰時ポップアップで作業へ引き戻す。spec 1.2-5 にあるとおり、OS 制約で「他アプリ起動の直接検知」は不可なので、自アプリのバックグラウンド遷移をトリガにしている。
+
+### 技術的決定事項
+- **閾値 5 秒**：通知センターを一瞬開いただけで発火しないよう、5 秒未満の離脱はポップアップを出さない。短時間の確認は離脱とみなさない設計。
+- **通知遅延 10 秒**：バックグラウンド直後に通知を出すと「ただ通知センター開いただけ」のケースで邪魔になる。10 秒経っても戻ってこなければ離脱と判断して通知発火。復帰時には必ずキャンセル。
+- **検知範囲は 🔥 のみ**：MVP では「作業セッション」を明確に持つのは 🔥 のブレーキタイマーだけ。🔵 の松竹梅はワンタップ完了なので作業セッションの概念がない。
+- **Web 対応**：`Page Visibility API`（`document.visibilitychange`）で同等の挙動を実現。native 通知は出ないが、復帰時のポップアップは出る。SSR ガード（`typeof document === 'undefined'`）あり。
+- **マウント位置**：ルートレイアウト（`_layout.tsx`）にフック＋ポップアップを配置することで、他タブにいるときも離脱検知が動く。
+
+### 残課題・次のステップ
+- 🔵 タスクにも「作業セッション」の概念を導入するか検討（現状は松竹梅タップで即完了）。
+- iOS Live Activity / Android フォアグラウンドサービスでの「OS レベル常時バナー」（spec 3.2 のフル実装）は v2。
+- バナーのアニメーション（パルス等）でより視認性を上げる。
+
+---
+
 ## 2026-05-22: Vercel への Web デプロイ対応（iPhone オンライン利用）
 **ブランチ:** claude/web-deploy-vrcl
 

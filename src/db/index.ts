@@ -45,6 +45,17 @@ async function migrate(db: SQLite.SQLiteDatabase): Promise<void> {
     'ALTER TABLE tasks ADD COLUMN timer_started_at INTEGER',
     'ALTER TABLE tasks ADD COLUMN worked_minutes INTEGER',
     'ALTER TABLE tasks ADD COLUMN completed_at INTEGER',
+    // 🔵 計測ループ（PR-A）
+    'ALTER TABLE tasks ADD COLUMN moved_to_today_at INTEGER',
+    'ALTER TABLE tasks ADD COLUMN blue_started_at INTEGER',
+    'ALTER TABLE tasks ADD COLUMN time_to_start_seconds INTEGER',
+    'ALTER TABLE tasks ADD COLUMN continued INTEGER',
+    // AI 見積もり（PR-B）
+    'ALTER TABLE tasks ADD COLUMN estimated_minutes INTEGER',
+    'ALTER TABLE tasks ADD COLUMN estimated_difficulty INTEGER',
+    'ALTER TABLE tasks ADD COLUMN estimated_resistance INTEGER',
+    'ALTER TABLE tasks ADD COLUMN estimate_rationale TEXT',
+    'ALTER TABLE tasks ADD COLUMN estimate_source TEXT',
   ]) {
     try {
       await db.execAsync(col);

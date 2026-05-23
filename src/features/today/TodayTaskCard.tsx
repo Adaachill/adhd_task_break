@@ -9,7 +9,9 @@ import type { ShojikubaiTier, Task } from '@/types/task';
 import { BrakeAlertModal } from './BrakeAlertModal';
 import { BrakeTimer } from './BrakeTimer';
 import { DoneOverlay } from './DoneOverlay';
+import { EstimateChip } from './EstimateChip';
 import { ShojikubaiButtons } from './ShojikubaiButtons';
+import { StartTaskButton } from './StartTaskButton';
 
 interface Props {
   task: Task;
@@ -81,8 +83,14 @@ export function TodayTaskCard({ task }: Props) {
 
         <Text style={[styles.text, { fontSize: fs.body }]}>{task.text}</Text>
 
-        {/* 🔵: 松竹梅ボタン */}
-        {isBlue && <ShojikubaiButtons onSelect={handleSelectTier} />}
+        {/* 🔵: AI 見積もり + 🚀 始める + 松竹梅ボタン */}
+        {isBlue && (
+          <>
+            <EstimateChip task={task} />
+            <StartTaskButton task={task} />
+            <ShojikubaiButtons onSelect={handleSelectTier} />
+          </>
+        )}
 
         {/* 🔥: ブレーキタイマー */}
         {isFire && (
