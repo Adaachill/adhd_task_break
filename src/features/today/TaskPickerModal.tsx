@@ -1,4 +1,5 @@
 import { FlatList, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useMemo } from 'react';
 
 import { useLayout } from '@/hooks/useLayout';
 import { useTaskStore } from '@/store/taskStore';
@@ -30,9 +31,20 @@ function PickerItem({ task, onPick }: { task: Task; onPick: () => void }) {
 }
 
 export function TaskPickerModal({ visible, onClose }: Props) {
-  const tasks = useTaskStore((s) => s.tasks); // inbox
+  const rawTasks = useTaskStore((s) => s.tasks); // inbox
   const moveToToday = useTaskStore((s) => s.moveToToday);
   const { fs } = useLayout();
+
+  const tasks = useMemo(
+    () =>
+      [...rawTasks].sort((a, b) => {
+        const aDue = a.due === 'today' ? 0 : 1;
+        const bDue = b.due === 'today' ? 0 : 1;
+        if (aDue !== bDue) return aDue - bDue;
+        return a.createdAt - b.createdAt;
+      }),
+    [rawTasks]
+  );
 
   const handlePick = async (task: Task) => {
     await moveToToday(task.id);

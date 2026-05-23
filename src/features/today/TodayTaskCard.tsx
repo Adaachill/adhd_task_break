@@ -15,9 +15,13 @@ import { StartTaskButton } from './StartTaskButton';
 
 interface Props {
   task: Task;
+  canMoveUp?: boolean;
+  canMoveDown?: boolean;
+  onMoveUp?: () => void;
+  onMoveDown?: () => void;
 }
 
-export function TodayTaskCard({ task }: Props) {
+export function TodayTaskCard({ task, canMoveUp, canMoveDown, onMoveUp, onMoveDown }: Props) {
   const completeShojikubai = useTaskStore((s) => s.completeShojikubai);
   const completeFireTask = useTaskStore((s) => s.completeFireTask);
   const startBrakeTimer = useTaskStore((s) => s.startBrakeTimer);
@@ -75,10 +79,34 @@ export function TodayTaskCard({ task }: Props) {
           <Text style={[styles.typeTag, { fontSize: fs.caption, color: isFire ? colors.fireFrom : colors.blue }]}>
             {isFire ? '🔥 沼タスク' : isBlue ? '🔵 動けるタスク' : 'タスク'}
           </Text>
-          {/* 今日から外す */}
-          <Pressable onPress={() => moveToInbox(task.id)} style={styles.removeBtn}>
-            <Text style={[styles.removeTxt, { fontSize: fs.caption }]}>✕</Text>
-          </Pressable>
+          {/* 並び替え + 今日から外す */}
+          <View style={styles.headerActions}>
+            {(canMoveUp || canMoveDown) && (
+              <View style={styles.reorderBtns}>
+                <Pressable
+                  onPress={onMoveUp}
+                  disabled={!canMoveUp}
+                  style={styles.reorderBtn}
+                  hitSlop={6}>
+                  <Text style={[styles.reorderTxt, { fontSize: fs.caption, opacity: canMoveUp ? 1 : 0.2 }]}>
+                    ↑
+                  </Text>
+                </Pressable>
+                <Pressable
+                  onPress={onMoveDown}
+                  disabled={!canMoveDown}
+                  style={styles.reorderBtn}
+                  hitSlop={6}>
+                  <Text style={[styles.reorderTxt, { fontSize: fs.caption, opacity: canMoveDown ? 1 : 0.2 }]}>
+                    ↓
+                  </Text>
+                </Pressable>
+              </View>
+            )}
+            <Pressable onPress={() => moveToInbox(task.id)} style={styles.removeBtn}>
+              <Text style={[styles.removeTxt, { fontSize: fs.caption }]}>✕</Text>
+            </Pressable>
+          </View>
         </View>
 
         <Text style={[styles.text, { fontSize: fs.body }]}>{task.text}</Text>
@@ -142,6 +170,22 @@ const styles = StyleSheet.create({
   },
   typeTag: {
     fontWeight: '600',
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  reorderBtns: {
+    flexDirection: 'row',
+    gap: 2,
+  },
+  reorderBtn: {
+    padding: spacing.xs,
+  },
+  reorderTxt: {
+    color: colors.textSecondary,
+    fontWeight: '700',
   },
   removeBtn: {
     padding: spacing.xs,
