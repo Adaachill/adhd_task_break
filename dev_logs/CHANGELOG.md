@@ -1,5 +1,32 @@
 # 開発履歴
 
+## 2026-05-22: Vercel への Web デプロイ対応（iPhone オンライン利用）
+**ブランチ:** claude/web-deploy-vrcl
+
+### 変更内容
+- `vercel.json`: `npx expo export -p web` で `dist/` を生成、`Cross-Origin-Opener-Policy` / `Cross-Origin-Embedder-Policy` を全パスに付与。
+- `public/manifest.webmanifest`: PWA マニフェスト（standalone・theme_color・icons）を追加。
+- `public/icon-512.png` / `public/apple-touch-icon.png` / `public/favicon.png`: PWA・iOS ホーム画面アイコンを配置。
+- `src/app/+html.tsx`: Expo Router の HTML ルートを上書きし、`viewport-fit=cover`、`apple-mobile-web-app-capable`、`apple-mobile-web-app-status-bar-style=black-translucent`、`manifest.webmanifest` への link 等を挿入。
+- `src/services/notifications/index.ts`: `Notifications.setNotificationHandler` の呼び出しを `Platform.OS !== 'web'` でガード。web で import 時に native API が走るのを回避（既存ブロッカー）。
+- `README.md`: Vercel 接続手順・PWA 対応・Web の制約を追記。
+
+### 変更意図・背景
+MVP3画面が揃ったので、iPhone Safari でオンライン利用しながら開発できるようにしたかった。push 連動の自動デプロイと、`vercel.json` で COOP/COEP をネイティブに付けられる利点から Vercel を選定。expo-sqlite（wa-sqlite）はブラウザで `SharedArrayBuffer` を要求するため、COOP/COEP の付与が必須。
+
+### 技術的決定事項
+- **ホスティング選定**: GitHub Pages は静的ヘッダー付与不可、Cloudflare Pages / Netlify と比較し、Vercel は Expo コミュニティ採用例が多く `framework: null` での Expo 静的出力との相性が良い点を重視。
+- **`installCommand` を `npm ci --legacy-peer-deps` に上書き**: expo-notifications 追加時に peer dep 解決のため `--legacy-peer-deps` でロックファイルを生成しているため。
+- **+html.tsx の採用**: Expo Router 静的レンダリングでは `+html.tsx` が HTML ルートのカスタマイズに使う標準的手段。`app.json` の web meta では Apple 専用タグを十分にカバーできない。
+- **アイコンは単一サイズ（512）で manifest 登録**: ブラウザが自動ダウンスケールするので、MVP 段階では複数サイズ生成のコストを払わない。
+
+### 残課題・次のステップ
+- iOS 16.4+ の PWA Web Push 対応（タブ閉鎖時のブレーキ通知）— v2 で検討。
+- アイコン 192/256/384 サイズの個別生成（Lighthouse PWA スコア向上）。
+- ServiceWorker 導入による静的アセットのオフラインキャッシュ。
+
+---
+
 ## 2026-05-22: 画面3「本日の褒めログ」実装
 **ブランチ:** claude/praise-log-Qw9k
 
