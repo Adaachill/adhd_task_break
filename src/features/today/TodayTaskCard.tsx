@@ -1,18 +1,18 @@
 import { useCallback, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { useLayout } from '@/hooks/useLayout';
 import { useTaskStore } from '@/store/taskStore';
 import { colors, radius, spacing } from '@/theme/tokens';
-import type { ShojikubaiDef, ShojikubaiTier, Task } from '@/types/task';
+import type { ShojikubaiDef, ShojikubaiEstimates, ShojikubaiTier, Task } from '@/types/task';
 
 import { BrakeAlertModal } from './BrakeAlertModal';
 import { BrakeTimer } from './BrakeTimer';
 import { DoneOverlay } from './DoneOverlay';
 import { EstimateChip } from './EstimateChip';
-import { ShojikubaiButtons } from './ShojikubaiButtons';
 import { ShojikubaiEditor } from './ShojikubaiEditor';
 import { StartTaskButton } from './StartTaskButton';
+import { TierSelectModal } from './TierSelectModal';
 
 interface Props {
   task: Task;
@@ -22,6 +22,127 @@ interface Props {
   onMoveDown?: () => void;
 }
 
+const MATSU_COLOR = '#FFD600';
+const TAKE_COLOR = colors.accentTo;
+const UME_COLOR = colors.blue;
+
+function getLastCompletedTier(doneTasks: Task[], taskText: string): ShojikubaiTier | null {
+  const match = doneTasks.find((t) => t.text === taskText && t.completedTier != null);
+  return match?.completedTier ?? null;
+}
+
+interface TierEstimateRowProps {
+  estimates: ShojikubaiEstimates;
+  onChange: (estimates: ShojikubaiEstimates) => void;
+}
+
+function TierEstimateRow({ estimates, onChange }: TierEstimateRowProps) {
+  const { fs } = useLayout();
+  const [matsuText, setMatsuText] = useState(estimates.matsu != null ? String(estimates.matsu) : '');
+  const [takeText, setTakeText] = useState(estimates.take != null ? String(estimates.take) : '');
+  const [umeText, setUmeText] = useState(estimates.ume != null ? String(estimates.ume) : '');
+
+  const commit = (matsu: string, take: string, ume: string) => {
+    const parse = (s: string) => {
+      const n = parseInt(s, 10);
+      return isNaN(n) || n <= 0 ? null : n;
+    };
+    onChange({ matsu: parse(matsu), take: parse(take), ume: parse(ume) });
+  };
+
+  return (
+    <View style={tierStyles.row}>
+      <Text style={[tierStyles.rowLabel, { fontSize: fs.caption }]}>⏱ 松竹梅の見積もり</Text>
+      <View style={tierStyles.inputs}>
+        <View style={tierStyles.inputGroup}>
+          <Text style={[tierStyles.tierLabel, { color: MATSU_COLOR, fontSize: fs.caption }]}>
+            松＊
+          </Text>
+          <TextInput
+            style={[tierStyles.input, tierStyles.inputRequired, { fontSize: fs.caption }]}
+            value={matsuText}
+            onChangeText={setMatsuText}
+            onBlur={() => commit(matsuText, takeText, umeText)}
+            onSubmitEditing={() => commit(matsuText, takeText, umeText)}
+            placeholder="分"
+            placeholderTextColor={colors.textSecondary}
+            keyboardType="numeric"
+            returnKeyType="done"
+            accessibilityLabel="松の見積もり（必須）"
+          />
+        </View>
+        <View style={tierStyles.inputGroup}>
+          <Text style={[tierStyles.tierLabel, { color: TAKE_COLOR, fontSize: fs.caption }]}>
+            竹
+          </Text>
+          <TextInput
+            style={[tierStyles.input, { fontSize: fs.caption }]}
+            value={takeText}
+            onChangeText={setTakeText}
+            onBlur={() => commit(matsuText, takeText, umeText)}
+            onSubmitEditing={() => commit(matsuText, takeText, umeText)}
+            placeholder="分"
+            placeholderTextColor={colors.textSecondary}
+            keyboardType="numeric"
+            returnKeyType="done"
+            accessibilityLabel="竹の見積もり（任意）"
+          />
+        </View>
+        <View style={tierStyles.inputGroup}>
+          <Text style={[tierStyles.tierLabel, { color: UME_COLOR, fontSize: fs.caption }]}>
+            梅
+          </Text>
+          <TextInput
+            style={[tierStyles.input, { fontSize: fs.caption }]}
+            value={umeText}
+            onChangeText={setUmeText}
+            onBlur={() => commit(matsuText, takeText, umeText)}
+            onSubmitEditing={() => commit(matsuText, takeText, umeText)}
+            placeholder="分"
+            placeholderTextColor={colors.textSecondary}
+            keyboardType="numeric"
+            returnKeyType="done"
+            accessibilityLabel="梅の見積もり（任意）"
+          />
+        </View>
+      </View>
+    </View>
+  );
+}
+
+const tierStyles = StyleSheet.create({
+  row: {
+    marginTop: spacing.md,
+    gap: spacing.xs,
+  },
+  rowLabel: {
+    color: colors.textSecondary,
+  },
+  inputs: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  inputGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  tierLabel: {
+    fontWeight: '700',
+  },
+  input: {
+    color: colors.text,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.textSecondary,
+    paddingVertical: 2,
+    width: 44,
+    textAlign: 'center',
+  },
+  inputRequired: {
+    borderBottomColor: MATSU_COLOR,
+  },
+});
+
 export function TodayTaskCard({ task, canMoveUp, canMoveDown, onMoveUp, onMoveDown }: Props) {
   const completeShojikubai = useTaskStore((s) => s.completeShojikubai);
   const completeFireTask = useTaskStore((s) => s.completeFireTask);
@@ -29,13 +150,19 @@ export function TodayTaskCard({ task, canMoveUp, canMoveDown, onMoveUp, onMoveDo
   const stopBrakeTimer = useTaskStore((s) => s.stopBrakeTimer);
   const updateShojikubai = useTaskStore((s) => s.updateShojikubai);
   const moveToInbox = useTaskStore((s) => s.moveToInbox);
+  const updateShojikubaiEstimates = useTaskStore((s) => s.updateShojikubaiEstimates);
+  const doneTasks = useTaskStore((s) => s.doneTasks);
   const { fs } = useLayout();
 
   const [doneTier, setDoneTier] = useState<ShojikubaiTier | null>(null);
   const [fireDone, setFireDone] = useState(false);
   const [brakeAlert, setBrakeAlert] = useState(false);
+  const [showTierModal, setShowTierModal] = useState(false);
+
+  const lastCompletedTier = getLastCompletedTier(doneTasks, task.text);
 
   const handleSelectTier = async (tier: ShojikubaiTier) => {
+    setShowTierModal(false);
     setDoneTier(tier);
     await completeShojikubai(task.id, tier);
   };
@@ -51,33 +178,48 @@ export function TodayTaskCard({ task, canMoveUp, canMoveDown, onMoveUp, onMoveDo
 
   const handleExtend = async () => {
     setBrakeAlert(false);
-    // 15分延長：現在のタイマーを停止して新しく15分で開始
     await stopBrakeTimer(task.id);
     await startBrakeTimer(task.id, 15);
   };
 
-  // 🔥 早期に「終わった！」→ 実測分数で完了
   const handleFireComplete = async (workedMinutes: number) => {
     setFireDone(true);
     await completeFireTask(task.id, workedMinutes);
   };
 
-  // タイムアップ後「強制終了して休憩」→ 設定分をフルで動けたとして完了
   const handleForceStop = async () => {
     setBrakeAlert(false);
     setFireDone(true);
     await completeFireTask(task.id, task.timerMinutes ?? 0);
   };
 
-  // 🔥 中断（タイマーをリセット。タスクは today に残る）
   const handleFirePause = async () => {
     await stopBrakeTimer(task.id);
   };
 
-  // 🔵 松竹梅定義の保存
   const handleSaveShojikubai = (def: ShojikubaiDef) => {
     void updateShojikubai(task.id, def);
   };
+
+  const handleEstimatesChange = (estimates: ShojikubaiEstimates) => {
+    void updateShojikubaiEstimates(task.id, estimates);
+  };
+
+  const currentEstimates: ShojikubaiEstimates = task.shojikubaiEstimates ?? {
+    matsu: null,
+    take: null,
+    ume: null,
+  };
+
+  // 実績分数（モーダル表示用）: 積算済み分 + 現セグメント分
+  const workedMinutes = (() => {
+    const accumulated = task.workedMinutes ?? 0;
+    const currentSegment = task.blueStartedAt != null
+      ? Math.max(0, Math.round((Date.now() - task.blueStartedAt) / 60_000))
+      : 0;
+    const total = accumulated + currentSegment;
+    return total > 0 ? total : null;
+  })();
 
   const isFire = task.type === 'fire';
   const isBlue = task.type === 'blue';
@@ -86,12 +228,10 @@ export function TodayTaskCard({ task, canMoveUp, canMoveDown, onMoveUp, onMoveDo
   return (
     <>
       <View style={[styles.card, { borderColor }]}>
-        {/* タスクテキスト */}
         <View style={styles.header}>
           <Text style={[styles.typeTag, { fontSize: fs.caption, color: isFire ? colors.fireFrom : colors.blue }]}>
             {isFire ? '🔥 沼タスク' : isBlue ? '🔵 TODO' : 'タスク'}
           </Text>
-          {/* 並び替え + 今日から外す */}
           <View style={styles.headerActions}>
             {(canMoveUp || canMoveDown) && (
               <View style={styles.reorderBtns}>
@@ -123,13 +263,22 @@ export function TodayTaskCard({ task, canMoveUp, canMoveDown, onMoveUp, onMoveDo
 
         <Text style={[styles.text, { fontSize: fs.body }]}>{task.text}</Text>
 
-        {/* 🔵: AI 見積もり + 松竹梅定義入力 + 🚀 始める + 松竹梅ボタン */}
+        {/* 🔵: AI見積もり + 松竹梅内容入力 + 見積もり時間 + 🚀始める + 完了 */}
         {isBlue && (
           <>
             <EstimateChip task={task} />
             <ShojikubaiEditor value={task.shojikubai} onSave={handleSaveShojikubai} />
+            <TierEstimateRow
+              estimates={currentEstimates}
+              onChange={handleEstimatesChange}
+            />
             <StartTaskButton task={task} />
-            <ShojikubaiButtons onSelect={handleSelectTier} />
+            <Pressable
+              style={styles.doneBtn}
+              onPress={() => setShowTierModal(true)}
+              accessibilityRole="button">
+              <Text style={[styles.doneTxt, { fontSize: fs.body }]}>完了 →</Text>
+            </Pressable>
           </>
         )}
 
@@ -151,22 +300,29 @@ export function TodayTaskCard({ task, canMoveUp, canMoveDown, onMoveUp, onMoveDo
         )}
       </View>
 
-      {/* 松竹梅達成オーバーレイ */}
       {doneTier && (
         <DoneOverlay tier={doneTier} taskText={task.text} onClose={handleDoneClose} />
       )}
 
-      {/* 🔥 完了オーバーレイ（竹相当の演出） */}
       {fireDone && !doneTier && (
         <DoneOverlay tier="take" taskText={task.text} onClose={handleDoneClose} />
       )}
 
-      {/* ブレーキ警告モーダル */}
       <BrakeAlertModal
         taskText={task.text}
         visible={brakeAlert}
         onExtend={handleExtend}
         onStop={handleForceStop}
+      />
+
+      <TierSelectModal
+        visible={showTierModal}
+        shojikubai={task.shojikubai}
+        estimates={task.shojikubaiEstimates}
+        lastCompletedTier={lastCompletedTier}
+        workedMinutes={workedMinutes}
+        onSelect={handleSelectTier}
+        onCancel={() => setShowTierModal(false)}
       />
     </>
   );

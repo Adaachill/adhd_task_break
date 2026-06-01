@@ -4,7 +4,7 @@ import { insertTask, listDoneBetween, listInbox, listToday, updateTask } from '@
 import { estimateTask as aiEstimateTask } from '@/services/ai/deepseek';
 import type { AiHistoryEntry } from '@/services/ai/types';
 import { classify } from '@/services/classify';
-import type { ClassificationPatch, ShojikubaiDef, ShojikubaiTier, Task } from '@/types/task';
+import type { ClassificationPatch, ShojikubaiDef, ShojikubaiEstimates, ShojikubaiTier, Task } from '@/types/task';
 
 function genId(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
@@ -40,6 +40,8 @@ interface TaskState {
   stopBrakeTimer: (id: string) => Promise<void>;
   // 🔥 タスク完了（実測分数を記録）
   completeFireTask: (id: string, workedMinutes: number) => Promise<void>;
+  // 🔵 松竹梅の見積もり分数を更新
+  updateShojikubaiEstimates: (id: string, estimates: ShojikubaiEstimates) => Promise<void>;
 }
 
 // 当日の 0:00〜翌0:00 のエポックms範囲
@@ -98,6 +100,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
       classifySource: result.type || result.due ? 'ai' : prevIsToday ? 'manual' : 'unclassified',
       shojikubai: null,
       completedTier: null,
+      shojikubaiEstimates: null,
       timerMinutes: null,
       timerStartedAt: null,
       workedMinutes: null,
@@ -210,16 +213,21 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     await updateTask(updated);
   },
 
-  // 🔵 中断（blueStartedAt をリセット。continued は false に）
+  // 🔵 中断（blueStartedAt をリセット。経過分数を workedMinutes に積算する）
   pauseBlueTask: async (id: string) => {
     const task = get().todayTasks.find((t) => t.id === id);
     if (!task || task.blueStartedAt === null) return;
 
+    const now = Date.now();
+    const elapsed = Math.max(0, Math.round((now - task.blueStartedAt) / 60_000));
+    const accumulated = (task.workedMinutes ?? 0) + elapsed;
+
     const updated: Task = {
       ...task,
       blueStartedAt: null,
+      workedMinutes: accumulated,
       continued: false,
-      updatedAt: Date.now(),
+      updatedAt: now,
     };
     set((s) => ({
       todayTasks: s.todayTasks.map((t) => (t.id === id ? updated : t)),
@@ -245,19 +253,22 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     if (!task) return;
 
     const now = Date.now();
-    // 🚀 押下済みなら実測分数を計算（最低1分）。押してなければ null のまま。
-    const worked =
+    // 現セグメントの経過分数 + 中断時に積算済みの分数を合算（最低1分）
+    const currentSegment =
       task.blueStartedAt !== null
-        ? Math.max(1, Math.round((now - task.blueStartedAt) / 60_000))
-        : null;
+        ? Math.max(0, Math.round((now - task.blueStartedAt) / 60_000))
+        : 0;
+    const accumulated = task.workedMinutes ?? 0;
+    const totalWorked = currentSegment + accumulated > 0
+      ? Math.max(1, currentSegment + accumulated)
+      : null;
 
     const updated: Task = {
       ...task,
       status: 'done',
       completedTier: tier,
-      workedMinutes: worked,
-      // 中断機能は後続。完了到達 = 継続成功とみなす
-      continued: task.blueStartedAt !== null ? true : null,
+      workedMinutes: totalWorked,
+      continued: (task.blueStartedAt !== null || task.continued === false) ? true : null,
       completedAt: now,
       updatedAt: now,
     };
@@ -304,6 +315,22 @@ export const useTaskStore = create<TaskState>((set, get) => ({
       updatedAt: Date.now(),
     };
 
+    set((s) => ({
+      todayTasks: s.todayTasks.map((t) => (t.id === id ? updated : t)),
+    }));
+    await updateTask(updated);
+  },
+
+  // 🔵 松竹梅の見積もり分数を更新
+  updateShojikubaiEstimates: async (id: string, estimates: ShojikubaiEstimates) => {
+    const task = get().todayTasks.find((t) => t.id === id);
+    if (!task) return;
+
+    const updated: Task = {
+      ...task,
+      shojikubaiEstimates: estimates,
+      updatedAt: Date.now(),
+    };
     set((s) => ({
       todayTasks: s.todayTasks.map((t) => (t.id === id ? updated : t)),
     }));

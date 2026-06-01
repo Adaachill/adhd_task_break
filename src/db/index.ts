@@ -56,6 +56,8 @@ async function migrate(db: SQLite.SQLiteDatabase): Promise<void> {
     'ALTER TABLE tasks ADD COLUMN estimated_resistance INTEGER',
     'ALTER TABLE tasks ADD COLUMN estimate_rationale TEXT',
     'ALTER TABLE tasks ADD COLUMN estimate_source TEXT',
+    // 松竹梅ごとの見積もり分数
+    'ALTER TABLE tasks ADD COLUMN shojikubai_estimates TEXT',
   ]) {
     try {
       await db.execAsync(col);

@@ -1,5 +1,5 @@
 import { getDb } from '@/db';
-import type { ShojikubaiDef, ShojikubaiTier, Task } from '@/types/task';
+import type { ShojikubaiDef, ShojikubaiEstimates, ShojikubaiTier, Task } from '@/types/task';
 
 // DB の行表現（snake_case / 整数bool / JSON文字列）
 interface TaskRow {
@@ -24,6 +24,7 @@ interface TaskRow {
   estimated_resistance: number | null;
   estimate_rationale: string | null;
   estimate_source: string | null;
+  shojikubai_estimates: string | null;
   completed_at: number | null;
   created_at: number;
   updated_at: number;
@@ -52,6 +53,9 @@ function rowToTask(r: TaskRow): Task {
     estimatedResistance: r.estimated_resistance,
     estimateRationale: r.estimate_rationale,
     estimateSource: (r.estimate_source as Task['estimateSource']) ?? null,
+    shojikubaiEstimates: r.shojikubai_estimates
+      ? (JSON.parse(r.shojikubai_estimates) as ShojikubaiEstimates)
+      : null,
     completedAt: r.completed_at,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
@@ -66,9 +70,9 @@ export async function insertTask(task: Task): Promise<void> {
         shojikubai, completed_tier, timer_minutes, timer_started_at, worked_minutes,
         moved_to_today_at, blue_started_at, time_to_start_seconds, continued,
         estimated_minutes, estimated_difficulty, estimated_resistance,
-        estimate_rationale, estimate_source,
+        estimate_rationale, estimate_source, shojikubai_estimates,
         completed_at, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       task.id,
       task.text,
@@ -91,6 +95,7 @@ export async function insertTask(task: Task): Promise<void> {
       task.estimatedResistance,
       task.estimateRationale,
       task.estimateSource,
+      task.shojikubaiEstimates ? JSON.stringify(task.shojikubaiEstimates) : null,
       task.completedAt,
       task.createdAt,
       task.updatedAt,
@@ -134,6 +139,7 @@ export async function updateTask(task: Task): Promise<void> {
          time_to_start_seconds = ?, continued = ?,
          estimated_minutes = ?, estimated_difficulty = ?, estimated_resistance = ?,
          estimate_rationale = ?, estimate_source = ?,
+         shojikubai_estimates = ?,
          completed_at = ?, updated_at = ?
      WHERE id = ?`,
     [
@@ -157,6 +163,7 @@ export async function updateTask(task: Task): Promise<void> {
       task.estimatedResistance,
       task.estimateRationale,
       task.estimateSource,
+      task.shojikubaiEstimates ? JSON.stringify(task.shojikubaiEstimates) : null,
       task.completedAt,
       task.updatedAt,
       task.id,

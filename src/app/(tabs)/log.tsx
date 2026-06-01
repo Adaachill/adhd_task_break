@@ -28,10 +28,17 @@ function DoneRow({ task }: { task: Task }) {
     task.timerMinutes != null &&
     task.workedMinutes <= task.timerMinutes;
 
-  const minuteLabel =
-    task.workedMinutes != null
-      ? ` (${task.workedMinutes}分${brakeApplied ? '・過集中回避!' : ''})`
-      : '';
+  const estimate = task.completedTier && task.shojikubaiEstimates
+    ? task.shojikubaiEstimates[task.completedTier]
+    : null;
+
+  const minuteLabel = (() => {
+    if (task.workedMinutes == null) return '';
+    const worked = `${task.workedMinutes}分`;
+    const est = estimate != null ? `/${estimate}分` : '';
+    const brake = brakeApplied ? '・過集中回避!' : '';
+    return ` (${worked}${est}${brake})`;
+  })();
 
   const labelColor = tier ? tier.color : isFire ? FIRE_COLOR : colors.textSecondary;
   const labelText = tier ? tier.label : isFire ? '🔥' : '?';

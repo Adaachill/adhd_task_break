@@ -1,5 +1,37 @@
 # 開発履歴
 
+## 2026-06-01: コンフリクト解消・バグ修正（中断時間積算・TierSelectModal改善）
+**ブランチ:** claude/vigilant-albattani-nWlW1
+
+### 変更内容
+- `src/store/taskStore.ts`: `pauseBlueTask` で中断時に経過分数を `workedMinutes` に積算するよう修正（バグ修正）
+- `src/store/taskStore.ts`: `completeShojikubai` で積算済み `workedMinutes` + 最終セグメントを合算して合計作業時間を算出（バグ修正）
+- `src/features/today/TierSelectModal.tsx`: `shojikubai` prop 追加。各tierオプションにShojikubaiEditorで入力した行動内容テキストを表示
+- `src/features/today/TodayTaskCard.tsx`: PR#14（ShojikubaiEditor・中断機能）とPR#15（TierEstimateRow・TierSelectModal）を統合
+
+### 変更意図・背景
+- PR#14とPR#15のコンフリクト解消
+- 中断→再開→完了のフローで作業時間が正しく積算されていなかったバグを修正
+- ShojikubaiEditorで書いた内容がTierSelectModalに反映されていなかった問題を修正
+
+### 技術的決定事項
+- `workedMinutes` を中間積算に兼用（pauseBlueTask で加算、completeShojikubai で追記）
+- TierSelectModalは `shojikubai?.matsu` 等のコンテンツを sublabel にフォールバックとして使用
+
+### 残課題・次のステップ
+- 習慣タスクの「前回tier」を task.text でマッチングしているため、テキスト変更時に履歴が途切れる
+
+## 2026-06-01: 松竹梅ごとの見積もり入力・完了時 tier 選択モーダル
+**ブランチ:** claude/vigilant-albattani-nWlW1（初版）
+
+### 変更内容
+- `src/types/task.ts`: `ShojikubaiEstimates`型を追加（matsu/take/ume の見積もり分数を保持）、`Task`に`shojikubaiEstimates`フィールドを追加
+- `src/db/index.ts`: `shojikubai_estimates` カラムのマイグレーションを追加
+- `src/db/taskRepo.ts`: 新フィールドの insert/update/rowToTask 対応
+- `src/store/taskStore.ts`: `updateShojikubaiEstimates`アクションを追加
+- `src/features/today/TierSelectModal.tsx`（新規）: 完了時にどのtierを達成したか選ぶモーダル
+- `src/features/today/TodayTaskCard.tsx`: 松竹梅の見積もり入力行（松は必須）を追加。ShojikubaiButtonsを「完了 →」ボタン＋TierSelectModalに変更
+- `src/app/(tabs)/log.tsx`: DoneRowに見積もり分数表示を追加
 ## 2026-06-01: UIテーマ統一・コントラスト改善・タブ名変更・タイマー表示強化
 **ブランチ:** claude/peaceful-brahmagupta-YlucS
 
@@ -33,20 +65,6 @@
 - `src/features/today/BrakeTimer.tsx`: 🔥タスクのタイマー実行中に「⏸ 中断」ボタンを追加（完了ではなく一時停止）
 - `src/store/taskStore.ts`: `pauseBlueTask`・`updateShojikubai` アクション追加、`startBlueTask` を再開可能に修正
 - `src/features/inbox/TaskBubble.tsx`: TYPE_OPTIONS の「🔵 動ける」→「🔵 TODO」に変更
-
-### 変更意図・背景
-- 松竹梅の内容（「梅=最低限」「竹=普通」「松=理想」）をユーザーが記入できるようにした
-- タスクを途中で中断できる機能がなく、再開できなかったので追加
-- 沼タスクのアラートは既に実装済み（BrakeAlertModal が isExpired 時に表示される）を確認
-- 「動ける」という表現が分かりにくいため「TODO」に変更
-
-### 技術的決定事項
-- `pauseBlueTask` は blueStartedAt を null にリセット。再開時は startBlueTask を再利用（重複防止ガードを除去）
-- ShojikubaiEditor はブラー時に保存。未入力でも松竹梅ボタンは使える（既存動作維持）
-- 🔥中断は既存の stopBrakeTimer を呼び出すだけで実装できた
-
-### 残課題・次のステップ
-- 松竹梅の内容を入力した場合、完了時に各レベルの内容をオーバーレイに表示するとより便利
 
 ## 2026-06-01: 褒めログ UI 再設計 — ルールベース褒めコメント実装
 **ブランチ:** claude/amazing-brahmagupta-ov0FY
