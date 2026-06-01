@@ -4,12 +4,13 @@ import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useLayout } from '@/hooks/useLayout';
 import { useTaskStore } from '@/store/taskStore';
 import { colors, radius, spacing } from '@/theme/tokens';
-import type { ShojikubaiEstimates, ShojikubaiTier, Task } from '@/types/task';
+import type { ShojikubaiDef, ShojikubaiEstimates, ShojikubaiTier, Task } from '@/types/task';
 
 import { BrakeAlertModal } from './BrakeAlertModal';
 import { BrakeTimer } from './BrakeTimer';
 import { DoneOverlay } from './DoneOverlay';
 import { EstimateChip } from './EstimateChip';
+import { ShojikubaiEditor } from './ShojikubaiEditor';
 import { StartTaskButton } from './StartTaskButton';
 import { TierSelectModal } from './TierSelectModal';
 
@@ -21,7 +22,6 @@ interface Props {
   onMoveDown?: () => void;
 }
 
-// 松の色
 const MATSU_COLOR = '#FFD600';
 const TAKE_COLOR = colors.accentTo;
 const UME_COLOR = colors.blue;
@@ -54,7 +54,6 @@ function TierEstimateRow({ estimates, onChange }: TierEstimateRowProps) {
     <View style={tierStyles.row}>
       <Text style={[tierStyles.rowLabel, { fontSize: fs.caption }]}>⏱ 松竹梅の見積もり</Text>
       <View style={tierStyles.inputs}>
-        {/* 松: 必須 */}
         <View style={tierStyles.inputGroup}>
           <Text style={[tierStyles.tierLabel, { color: MATSU_COLOR, fontSize: fs.caption }]}>
             松＊
@@ -72,7 +71,6 @@ function TierEstimateRow({ estimates, onChange }: TierEstimateRowProps) {
             accessibilityLabel="松の見積もり（必須）"
           />
         </View>
-        {/* 竹: 任意 */}
         <View style={tierStyles.inputGroup}>
           <Text style={[tierStyles.tierLabel, { color: TAKE_COLOR, fontSize: fs.caption }]}>
             竹
@@ -90,7 +88,6 @@ function TierEstimateRow({ estimates, onChange }: TierEstimateRowProps) {
             accessibilityLabel="竹の見積もり（任意）"
           />
         </View>
-        {/* 梅: 任意 */}
         <View style={tierStyles.inputGroup}>
           <Text style={[tierStyles.tierLabel, { color: UME_COLOR, fontSize: fs.caption }]}>
             梅
@@ -151,6 +148,7 @@ export function TodayTaskCard({ task, canMoveUp, canMoveDown, onMoveUp, onMoveDo
   const completeFireTask = useTaskStore((s) => s.completeFireTask);
   const startBrakeTimer = useTaskStore((s) => s.startBrakeTimer);
   const stopBrakeTimer = useTaskStore((s) => s.stopBrakeTimer);
+  const updateShojikubai = useTaskStore((s) => s.updateShojikubai);
   const moveToInbox = useTaskStore((s) => s.moveToInbox);
   const updateShojikubaiEstimates = useTaskStore((s) => s.updateShojikubaiEstimates);
   const doneTasks = useTaskStore((s) => s.doneTasks);
@@ -195,6 +193,14 @@ export function TodayTaskCard({ task, canMoveUp, canMoveDown, onMoveUp, onMoveDo
     await completeFireTask(task.id, task.timerMinutes ?? 0);
   };
 
+  const handleFirePause = async () => {
+    await stopBrakeTimer(task.id);
+  };
+
+  const handleSaveShojikubai = (def: ShojikubaiDef) => {
+    void updateShojikubai(task.id, def);
+  };
+
   const handleEstimatesChange = (estimates: ShojikubaiEstimates) => {
     void updateShojikubaiEstimates(task.id, estimates);
   };
@@ -205,11 +211,15 @@ export function TodayTaskCard({ task, canMoveUp, canMoveDown, onMoveUp, onMoveDo
     ume: null,
   };
 
-  // 実績分数（モーダル表示用）
-  const workedMinutes =
-    task.blueStartedAt != null
-      ? Math.max(1, Math.round((Date.now() - task.blueStartedAt) / 60_000))
-      : null;
+  // 実績分数（モーダル表示用）: 積算済み分 + 現セグメント分
+  const workedMinutes = (() => {
+    const accumulated = task.workedMinutes ?? 0;
+    const currentSegment = task.blueStartedAt != null
+      ? Math.max(0, Math.round((Date.now() - task.blueStartedAt) / 60_000))
+      : 0;
+    const total = accumulated + currentSegment;
+    return total > 0 ? total : null;
+  })();
 
   const isFire = task.type === 'fire';
   const isBlue = task.type === 'blue';
@@ -218,12 +228,10 @@ export function TodayTaskCard({ task, canMoveUp, canMoveDown, onMoveUp, onMoveDo
   return (
     <>
       <View style={[styles.card, { borderColor }]}>
-        {/* タスクテキスト */}
         <View style={styles.header}>
           <Text style={[styles.typeTag, { fontSize: fs.caption, color: isFire ? colors.fireFrom : colors.blue }]}>
-            {isFire ? '🔥 沼タスク' : isBlue ? '🔵 動けるタスク' : 'タスク'}
+            {isFire ? '🔥 沼タスク' : isBlue ? '🔵 TODO' : 'タスク'}
           </Text>
-          {/* 並び替え + 今日から外す */}
           <View style={styles.headerActions}>
             {(canMoveUp || canMoveDown) && (
               <View style={styles.reorderBtns}>
@@ -255,10 +263,11 @@ export function TodayTaskCard({ task, canMoveUp, canMoveDown, onMoveUp, onMoveDo
 
         <Text style={[styles.text, { fontSize: fs.body }]}>{task.text}</Text>
 
-        {/* 🔵: AI 見積もり + 松竹梅見積もり入力 + 🚀 始める + 完了ボタン */}
+        {/* 🔵: AI見積もり + 松竹梅内容入力 + 見積もり時間 + 🚀始める + 完了 */}
         {isBlue && (
           <>
             <EstimateChip task={task} />
+            <ShojikubaiEditor value={task.shojikubai} onSave={handleSaveShojikubai} />
             <TierEstimateRow
               estimates={currentEstimates}
               onChange={handleEstimatesChange}
@@ -275,7 +284,12 @@ export function TodayTaskCard({ task, canMoveUp, canMoveDown, onMoveUp, onMoveDo
 
         {/* 🔥: ブレーキタイマー */}
         {isFire && (
-          <BrakeTimer task={task} onTimeUp={handleTimeUp} onComplete={handleFireComplete} />
+          <BrakeTimer
+            task={task}
+            onTimeUp={handleTimeUp}
+            onComplete={handleFireComplete}
+            onPause={handleFirePause}
+          />
         )}
 
         {/* 属性なしタスク: 完了ボタン */}
@@ -286,17 +300,14 @@ export function TodayTaskCard({ task, canMoveUp, canMoveDown, onMoveUp, onMoveDo
         )}
       </View>
 
-      {/* 松竹梅達成オーバーレイ */}
       {doneTier && (
         <DoneOverlay tier={doneTier} taskText={task.text} onClose={handleDoneClose} />
       )}
 
-      {/* 🔥 完了オーバーレイ（竹相当の演出） */}
       {fireDone && !doneTier && (
         <DoneOverlay tier="take" taskText={task.text} onClose={handleDoneClose} />
       )}
 
-      {/* ブレーキ警告モーダル */}
       <BrakeAlertModal
         taskText={task.text}
         visible={brakeAlert}
@@ -304,9 +315,9 @@ export function TodayTaskCard({ task, canMoveUp, canMoveDown, onMoveUp, onMoveDo
         onStop={handleForceStop}
       />
 
-      {/* 松竹梅選択モーダル */}
       <TierSelectModal
         visible={showTierModal}
+        shojikubai={task.shojikubai}
         estimates={task.shojikubaiEstimates}
         lastCompletedTier={lastCompletedTier}
         workedMinutes={workedMinutes}

@@ -15,6 +15,8 @@ interface Props {
   onTimeUp: () => void;
   // 早期に「止める＝完了」した際の実測分数を親へ通知
   onComplete: (workedMinutes: number) => void;
+  // タイマーを止めてタスクを中断（完了ではない）
+  onPause: () => void;
 }
 
 // タイマー開始からの経過分数（最低1分）
@@ -23,7 +25,7 @@ function elapsedMinutes(startedAt: number | null): number {
   return Math.max(1, Math.round((Date.now() - startedAt) / 60_000));
 }
 
-export function BrakeTimer({ task, onTimeUp, onComplete }: Props) {
+export function BrakeTimer({ task, onTimeUp, onComplete, onPause }: Props) {
   const startBrakeTimer = useTaskStore((s) => s.startBrakeTimer);
   const { fs } = useLayout();
 
@@ -43,7 +45,7 @@ export function BrakeTimer({ task, onTimeUp, onComplete }: Props) {
     await startBrakeTimer(task.id, minutes, notifId ?? undefined);
   };
 
-  // 「止める＝早期完了」。通知をキャンセルし、実測分数を親に渡す
+  // 「終わった！」= 早期完了。通知をキャンセルし、実測分数を親に渡す
   const handleStop = async () => {
     const notifId = notifMap.get(task.id);
     if (notifId) {
@@ -51,6 +53,16 @@ export function BrakeTimer({ task, onTimeUp, onComplete }: Props) {
       notifMap.delete(task.id);
     }
     onComplete(elapsedMinutes(task.timerStartedAt));
+  };
+
+  // 「中断」= タイマーを止めてタスクを today に残す（完了ではない）
+  const handlePause = async () => {
+    const notifId = notifMap.get(task.id);
+    if (notifId) {
+      await cancelNotification(notifId);
+      notifMap.delete(task.id);
+    }
+    onPause();
   };
 
   if (isRunning) {
@@ -63,9 +75,14 @@ export function BrakeTimer({ task, onTimeUp, onComplete }: Props) {
           {isExpired ? '時間になりました！' : `残り時間（${task.timerMinutes}分設定）`}
         </Text>
         {!isExpired && (
-          <Pressable onPress={handleStop} style={styles.stopBtn}>
-            <Text style={[styles.stopText, { fontSize: fs.small }]}>✋ 終わった！</Text>
-          </Pressable>
+          <View style={styles.actionRow}>
+            <Pressable onPress={handleStop} style={styles.stopBtn}>
+              <Text style={[styles.stopText, { fontSize: fs.small }]}>✋ 終わった！</Text>
+            </Pressable>
+            <Pressable onPress={handlePause} style={styles.pauseBtn}>
+              <Text style={[styles.pauseText, { fontSize: fs.small }]}>⏸ 中断</Text>
+            </Pressable>
+          </View>
         )}
       </View>
     );
@@ -125,8 +142,12 @@ const styles = StyleSheet.create({
     color: colors.fireFrom,
     fontWeight: '600',
   },
-  stopBtn: {
+  actionRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
     marginTop: spacing.sm,
+  },
+  stopBtn: {
     paddingHorizontal: spacing.xl,
     paddingVertical: spacing.sm,
     borderRadius: radius.pill,
@@ -134,6 +155,17 @@ const styles = StyleSheet.create({
   },
   stopText: {
     color: colors.text,
+    fontWeight: '600',
+  },
+  pauseBtn: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  pauseText: {
+    color: colors.textSecondary,
     fontWeight: '600',
   },
 });

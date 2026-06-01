@@ -1,32 +1,48 @@
 # 開発履歴
 
-## 2026-06-01: 松竹梅ごとの見積もり入力・完了時 tier 選択モーダル
+## 2026-06-01: コンフリクト解消・バグ修正（中断時間積算・TierSelectModal改善）
 **ブランチ:** claude/vigilant-albattani-nWlW1
+
+### 変更内容
+- `src/store/taskStore.ts`: `pauseBlueTask` で中断時に経過分数を `workedMinutes` に積算するよう修正（バグ修正）
+- `src/store/taskStore.ts`: `completeShojikubai` で積算済み `workedMinutes` + 最終セグメントを合算して合計作業時間を算出（バグ修正）
+- `src/features/today/TierSelectModal.tsx`: `shojikubai` prop 追加。各tierオプションにShojikubaiEditorで入力した行動内容テキストを表示
+- `src/features/today/TodayTaskCard.tsx`: PR#14（ShojikubaiEditor・中断機能）とPR#15（TierEstimateRow・TierSelectModal）を統合
+
+### 変更意図・背景
+- PR#14とPR#15のコンフリクト解消
+- 中断→再開→完了のフローで作業時間が正しく積算されていなかったバグを修正
+- ShojikubaiEditorで書いた内容がTierSelectModalに反映されていなかった問題を修正
+
+### 技術的決定事項
+- `workedMinutes` を中間積算に兼用（pauseBlueTask で加算、completeShojikubai で追記）
+- TierSelectModalは `shojikubai?.matsu` 等のコンテンツを sublabel にフォールバックとして使用
+
+### 残課題・次のステップ
+- 習慣タスクの「前回tier」を task.text でマッチングしているため、テキスト変更時に履歴が途切れる
+
+## 2026-06-01: 松竹梅ごとの見積もり入力・完了時 tier 選択モーダル
+**ブランチ:** claude/vigilant-albattani-nWlW1（初版）
 
 ### 変更内容
 - `src/types/task.ts`: `ShojikubaiEstimates`型を追加（matsu/take/ume の見積もり分数を保持）、`Task`に`shojikubaiEstimates`フィールドを追加
 - `src/db/index.ts`: `shojikubai_estimates` カラムのマイグレーションを追加
 - `src/db/taskRepo.ts`: 新フィールドの insert/update/rowToTask 対応
-- `src/store/taskStore.ts`: `updateShojikubaiEstimates`アクションを追加、addTaskの初期化に`shojikubaiEstimates: null`を追加
-- `src/features/today/TierSelectModal.tsx`（新規）: 完了時にどのtierを達成したか選ぶモーダル。前回完了tierに応じてデフォルト選択を変化（松→竹→梅の順）
-- `src/features/today/TodayTaskCard.tsx`: 🔵タスクに松竹梅の見積もり入力行（松は必須表示・黄色ボーダー）を追加。ShojikubaiButtonsを「完了 →」ボタン＋TierSelectModalに変更
-- `src/app/(tabs)/log.tsx`: DoneRowに見積もり分数表示を追加（例: `45分/30分`）
+- `src/store/taskStore.ts`: `updateShojikubaiEstimates`アクションを追加
+- `src/features/today/TierSelectModal.tsx`（新規）: 完了時にどのtierを達成したか選ぶモーダル
+- `src/features/today/TodayTaskCard.tsx`: 松竹梅の見積もり入力行（松は必須）を追加。ShojikubaiButtonsを「完了 →」ボタン＋TierSelectModalに変更
+- `src/app/(tabs)/log.tsx`: DoneRowに見積もり分数表示を追加
 
-### 変更意図・背景
-ADHD向けの「最初の行動をしやすくする」設計改善。
-松（理想）だけを必須見積もりにし、竹・梅は任意にすることで記入負担を最小化。
-完了時は「3ボタンを即タップ」ではなく、達成レベルをモーダルで選ぶ体験に変更し、「どこまでやれたか」を意識的に振り返れるようにした。
-前回完了tierをデフォルトに反映することで、習慣タスクで毎回同じtierを選ぶ手間を削減。
+## 2026-06-01: 細かい4点修正（松竹梅入力・中断機能・沼アラート確認・TODO表示変更）
+**ブランチ:** claude/sleepy-faraday-niOxM
 
-### 技術的決定事項
-- ShojikubaiEstimates は Task 本体に JSON フィールドとして持たせた（ShojikubaiDef と同様の設計）
-- TierEstimateRow をTodayTaskCard内のローカルコンポーネントとして実装（外部からのpropsが複雑になるため）
-- デフォルト tier の決定ロジック：doneTasks から同テキストの最新完了を検索（習慣タスクの反復利用を想定）
-- workedMinutes のリアルタイム計算（blueStartedAt から現在時刻）をモーダルに渡し、実績時間をその場で確認可能に
-
-### 残課題・次のステップ
-- 習慣タスクの「前回tier」を task.id ではなく task.text でマッチングしているため、テキスト変更時に履歴が途切れる
-- 見積もり入力を Inbox 画面に移動するか Today 画面に残すか、UX 検証が必要
+### 変更内容
+- `src/features/today/ShojikubaiEditor.tsx` (新規): 松竹梅（梅/竹/松）の行動内容を入力するフォームコンポーネント
+- `src/features/today/TodayTaskCard.tsx`: ShojikubaiEditor を🔵タスクカードに追加。「動けるタスク」→「TODO」に表示変更
+- `src/features/today/StartTaskButton.tsx`: 作業中に「⏸ 中断」ボタンを追加。中断後は「🚀 再開」ボタンを表示
+- `src/features/today/BrakeTimer.tsx`: 🔥タスクのタイマー実行中に「⏸ 中断」ボタンを追加（完了ではなく一時停止）
+- `src/store/taskStore.ts`: `pauseBlueTask`・`updateShojikubai` アクション追加、`startBlueTask` を再開可能に修正
+- `src/features/inbox/TaskBubble.tsx`: TYPE_OPTIONS の「🔵 動ける」→「🔵 TODO」に変更
 
 ## 2026-06-01: 褒めログ UI 再設計 — ルールベース褒めコメント実装
 **ブランチ:** claude/amazing-brahmagupta-ov0FY

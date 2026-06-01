@@ -3,7 +3,7 @@ import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { useLayout } from '@/hooks/useLayout';
 import { colors, radius, spacing } from '@/theme/tokens';
-import type { ShojikubaiEstimates, ShojikubaiTier } from '@/types/task';
+import type { ShojikubaiDef, ShojikubaiEstimates, ShojikubaiTier } from '@/types/task';
 
 interface TierOption {
   tier: ShojikubaiTier;
@@ -45,6 +45,12 @@ const TIER_OPTIONS: TierOption[] = [
   },
 ];
 
+const SHOJIKUBAI_KEY: Record<ShojikubaiTier, keyof ShojikubaiDef> = {
+  matsu: 'matsu',
+  take: 'take',
+  ume: 'ume',
+};
+
 function getDefaultTier(lastCompletedTier: ShojikubaiTier | null): ShojikubaiTier {
   if (lastCompletedTier === 'matsu') return 'take';
   if (lastCompletedTier === 'take') return 'ume';
@@ -53,6 +59,7 @@ function getDefaultTier(lastCompletedTier: ShojikubaiTier | null): ShojikubaiTie
 
 interface Props {
   visible: boolean;
+  shojikubai: ShojikubaiDef | null;
   estimates: ShojikubaiEstimates | null;
   lastCompletedTier: ShojikubaiTier | null;
   workedMinutes: number | null;
@@ -62,6 +69,7 @@ interface Props {
 
 export function TierSelectModal({
   visible,
+  shojikubai,
   estimates,
   lastCompletedTier,
   workedMinutes,
@@ -94,6 +102,7 @@ export function TierSelectModal({
             {TIER_OPTIONS.map((opt) => {
               const isSelected = selected === opt.tier;
               const estimate = estimates?.[opt.tier];
+              const content = shojikubai?.[SHOJIKUBAI_KEY[opt.tier]];
               return (
                 <Pressable
                   key={opt.tier}
@@ -105,32 +114,36 @@ export function TierSelectModal({
                   ]}
                   accessibilityRole="radio"
                   accessibilityState={{ checked: isSelected }}>
-                  <View style={styles.optionLeft}>
-                    <Text style={[styles.optionEmoji, { fontSize: fs.body }]}>{opt.emoji}</Text>
-                    <View>
-                      <Text style={[styles.optionLabel, { color: opt.color, fontSize: fs.body }]}>
-                        {opt.label}
-                      </Text>
-                      <Text style={[styles.optionSub, { fontSize: fs.caption }]}>
-                        {opt.sublabel}
-                      </Text>
+                  <View style={styles.optionMain}>
+                    <View style={styles.optionLeft}>
+                      <Text style={[styles.optionEmoji, { fontSize: fs.body }]}>{opt.emoji}</Text>
+                      <View>
+                        <Text style={[styles.optionLabel, { color: opt.color, fontSize: fs.body }]}>
+                          {opt.label}
+                        </Text>
+                        <Text style={[styles.optionSub, { fontSize: fs.caption }]}>
+                          {content || opt.sublabel}
+                        </Text>
+                      </View>
+                    </View>
+                    <View style={styles.optionRight}>
+                      {estimate != null && (
+                        <Text style={[styles.estimate, { color: opt.color, fontSize: fs.caption }]}>
+                          見積 {estimate}分
+                        </Text>
+                      )}
+                      {isSelected && (
+                        <View style={[styles.checkDot, { backgroundColor: opt.color }]} />
+                      )}
                     </View>
                   </View>
-                  {estimate != null && (
-                    <Text style={[styles.estimate, { color: opt.color, fontSize: fs.caption }]}>
-                      見積 {estimate}分
-                    </Text>
-                  )}
-                  {isSelected && (
-                    <View style={[styles.checkDot, { backgroundColor: opt.color }]} />
-                  )}
                 </Pressable>
               );
             })}
           </View>
 
           <Pressable
-            style={[styles.confirmBtn]}
+            style={styles.confirmBtn}
             onPress={() => onSelect(selected)}
             accessibilityRole="button">
             <Text style={[styles.confirmText, { fontSize: fs.body }]}>
@@ -180,13 +193,15 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   option: {
-    flexDirection: 'row',
-    alignItems: 'center',
     borderRadius: radius.md,
     paddingVertical: spacing.md,
     paddingHorizontal: spacing.lg,
     borderWidth: 1.5,
     borderColor: 'transparent',
+  },
+  optionMain: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   optionLeft: {
     flex: 1,
@@ -204,9 +219,13 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginTop: 2,
   },
+  optionRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
   estimate: {
     fontWeight: '600',
-    marginRight: spacing.sm,
   },
   checkDot: {
     width: 10,
