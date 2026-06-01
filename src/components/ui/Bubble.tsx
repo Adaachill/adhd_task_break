@@ -26,13 +26,9 @@ export function Bubble({ variant, children }: BubbleProps) {
   }
   if (variant === 'fire') {
     return (
-      <LinearGradient
-        colors={gradients.fire}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={[styles.base, styles.left]}>
+      <View style={[styles.base, styles.left, styles.fire]}>
         {children}
-      </LinearGradient>
+      </View>
     );
   }
   return <View style={[styles.base, styles.left, styles.ai]}>{children}</View>;
@@ -56,5 +52,10 @@ const styles = StyleSheet.create({
   },
   ai: {
     backgroundColor: colors.surfaceAlt,
+  },
+  fire: {
+    backgroundColor: 'rgba(255,90,110,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,90,110,0.35)',
   },
 });

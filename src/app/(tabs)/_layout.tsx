@@ -28,7 +28,7 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: '吐き出し',
+          title: 'タスク掃き出し',
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="chatbubble-ellipses" size={isDesktop ? size * 1.2 : size} color={color} />
           ),
@@ -37,7 +37,7 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="today"
         options={{
-          title: '今日',
+          title: '今日のタスク',
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="today" size={isDesktop ? size * 1.2 : size} color={color} />
           ),
