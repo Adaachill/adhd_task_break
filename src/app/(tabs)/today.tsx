@@ -49,7 +49,9 @@ export default function TodayScreen() {
     .map((id) => filteredTasks.find((t) => t.id === id))
     .filter((t): t is Task => t !== undefined);
 
-  const canAdd = filteredTasks.length < MAX_TODAY;
+  // 完了済みの習慣化タスクは枠カウントから除外（再開・追加作業のため残しているだけ）
+  const activeCount = filteredTasks.filter((t) => t.status !== 'done').length;
+  const canAdd = activeCount < MAX_TODAY;
 
   const moveTaskUp = (index: number) => {
     if (index <= 0) return;
@@ -125,7 +127,7 @@ export default function TodayScreen() {
           {canAdd && (
             <TaskSuggestRow
               tasks={inboxForTab}
-              emptySlots={MAX_TODAY - filteredTasks.length}
+              emptySlots={MAX_TODAY - activeCount}
               onSelectMore={() => setPickerVisible(true)}
             />
           )}
@@ -134,7 +136,7 @@ export default function TodayScreen() {
         {/* 残り枠数表示 */}
         <View style={styles.footer}>
           <Text style={[styles.footerTxt, { fontSize: fs.caption }]}>
-            {filteredTasks.length} / {MAX_TODAY} 枠使用中
+            {activeCount} / {MAX_TODAY} 枠使用中
           </Text>
         </View>
       </View>

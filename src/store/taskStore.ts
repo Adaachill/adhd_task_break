@@ -36,10 +36,18 @@ interface TaskState {
   // 🔵 松竹梅達成
   completeShojikubai: (id: string, tier: ShojikubaiTier) => Promise<void>;
   // 🔥 ブレーキタイマー
-  startBrakeTimer: (id: string, minutes: number, notificationId?: string) => Promise<void>;
+  startBrakeTimer: (id: string, minutes: number, goal: string, notificationId?: string) => Promise<void>;
+  // 🔥 タイマーを止める。stopは中断扱いで、経過時間を workedMinutes に積算する
   stopBrakeTimer: (id: string) => Promise<void>;
   // 🔥 タスク完了（実測分数を記録）
   completeFireTask: (id: string, workedMinutes: number) => Promise<void>;
+  // 完了タスクを今日のタスクに戻す（追加作業・より上の松竹梅基準のため）
+  reopenTask: (id: string) => Promise<void>;
+  // doneTasks に対する編集（ほめログ画面用）
+  updateDoneTask: (
+    id: string,
+    patch: Partial<Pick<Task, 'text' | 'type' | 'due' | 'isHabit' | 'estimatedMinutes' | 'estimateSource' | 'timerMinutes' | 'timerGoal'>>
+  ) => Promise<void>;
   // 🔵 松竹梅の見積もり分数を更新
   updateShojikubaiEstimates: (id: string, estimates: ShojikubaiEstimates) => Promise<void>;
   // 今日のタスクの編集（テキスト・タイプ・期限・習慣・見積もり分数）
@@ -69,7 +77,8 @@ export const useTaskStore = create<TaskState>((set, get) => ({
   },
 
   loadToday: async () => {
-    const todayTasks = await listToday();
+    const { start, end } = todayRange();
+    const todayTasks = await listToday(start, end);
     set({ todayTasks });
   },
 
@@ -108,6 +117,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
       shojikubaiEstimates: null,
       timerMinutes: null,
       timerStartedAt: null,
+      timerGoal: null,
       workedMinutes: null,
       movedToTodayAt: null,
       blueStartedAt: null,
@@ -278,15 +288,18 @@ export const useTaskStore = create<TaskState>((set, get) => ({
       updatedAt: now,
     };
 
+    // 習慣化タスクは完了しても今日のタスクタブに残す（再開・追加作業のため）
     set((s) => ({
-      todayTasks: s.todayTasks.filter((t) => t.id !== id),
-      doneTasks: [updated, ...s.doneTasks],
+      todayTasks: updated.isHabit
+        ? s.todayTasks.map((t) => (t.id === id ? updated : t))
+        : s.todayTasks.filter((t) => t.id !== id),
+      doneTasks: [updated, ...s.doneTasks.filter((t) => t.id !== id)],
     }));
     await updateTask(updated);
   },
 
   // 🔥 タイマー開始（絶対時刻ベース）
-  startBrakeTimer: async (id: string, minutes: number, notificationId?: string) => {
+  startBrakeTimer: async (id: string, minutes: number, goal: string, notificationId?: string) => {
     const task = get().todayTasks.find((t) => t.id === id);
     if (!task) return;
 
@@ -294,6 +307,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
       ...task,
       timerMinutes: minutes,
       timerStartedAt: Date.now(),
+      timerGoal: goal,
       // notificationId を shojikubai フィールドには入れず、将来の拡張カラムを想定
       updatedAt: Date.now(),
     };
@@ -309,15 +323,22 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     await updateTask(updated);
   },
 
-  // 🔥 タイマー停止（タイマーだけリセット。タスクは today に残る）
+  // 🔥 タイマー停止（中断扱い。経過時間を workedMinutes に積算し、タスクは today に残る）
   stopBrakeTimer: async (id: string) => {
     const task = get().todayTasks.find((t) => t.id === id);
     if (!task) return;
 
+    const now = Date.now();
+    const elapsed = task.timerStartedAt != null
+      ? Math.max(0, Math.round((now - task.timerStartedAt) / 60_000))
+      : 0;
+    const accumulated = (task.workedMinutes ?? 0) + elapsed;
+
     const updated: Task = {
       ...task,
       timerStartedAt: null,
-      updatedAt: Date.now(),
+      workedMinutes: accumulated > 0 ? accumulated : task.workedMinutes,
+      updatedAt: now,
     };
 
     set((s) => ({
@@ -373,9 +394,64 @@ export const useTaskStore = create<TaskState>((set, get) => ({
       updatedAt: now,
     };
 
+    // 習慣化タスクは完了しても今日のタスクタブに残す
     set((s) => ({
-      todayTasks: s.todayTasks.filter((t) => t.id !== id),
-      doneTasks: [updated, ...s.doneTasks],
+      todayTasks: updated.isHabit
+        ? s.todayTasks.map((t) => (t.id === id ? updated : t))
+        : s.todayTasks.filter((t) => t.id !== id),
+      doneTasks: [updated, ...s.doneTasks.filter((t) => t.id !== id)],
+    }));
+    await updateTask(updated);
+  },
+
+  // 完了タスクの再開（褒めログから / 今日タブの完了済み習慣から）
+  // 達成情報は保持しつつ、status を today に戻して追加作業を可能にする
+  reopenTask: async (id: string) => {
+    const task =
+      get().doneTasks.find((t) => t.id === id) ??
+      get().todayTasks.find((t) => t.id === id);
+    if (!task) return;
+
+    const now = Date.now();
+    const updated: Task = {
+      ...task,
+      status: 'today',
+      // 達成情報をクリアして、再度より上の基準を選べるようにする
+      completedTier: null,
+      completedAt: null,
+      // 🔥 のタイマーは止まった状態に戻す
+      timerStartedAt: null,
+      // 取り掛かりラグ計測の起点を再設定
+      movedToTodayAt: task.movedToTodayAt ?? now,
+      updatedAt: now,
+    };
+
+    set((s) => {
+      const inToday = s.todayTasks.some((t) => t.id === id);
+      return {
+        todayTasks: inToday
+          ? s.todayTasks.map((t) => (t.id === id ? updated : t))
+          : [...s.todayTasks, updated],
+        doneTasks: s.doneTasks.filter((t) => t.id !== id),
+      };
+    });
+    await updateTask(updated);
+  },
+
+  // doneTasks に対する編集（ほめログ画面用）
+  updateDoneTask: async (id, patch) => {
+    const task = get().doneTasks.find((t) => t.id === id);
+    if (!task) return;
+
+    const updated: Task = {
+      ...task,
+      ...patch,
+      updatedAt: Date.now(),
+    };
+    set((s) => ({
+      doneTasks: s.doneTasks.map((t) => (t.id === id ? updated : t)),
+      // habit の場合は todayTasks にも同じレコードが存在する
+      todayTasks: s.todayTasks.map((t) => (t.id === id ? { ...t, ...patch, updatedAt: updated.updatedAt } : t)),
     }));
     await updateTask(updated);
   },

@@ -1,6 +1,6 @@
 import { useFocusEffect } from 'expo-router';
-import { useCallback, useMemo } from 'react';
-import { Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Alert, Modal, Platform, Pressable, ScrollView, Share, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useLayout } from '@/hooks/useLayout';
@@ -17,8 +17,31 @@ const TIER: Record<ShojikubaiTier, { label: string; color: string }> = {
 };
 const FIRE_COLOR = colors.fireFrom;
 
-// タスク1件の行
-function DoneRow({ task }: { task: Task }) {
+// 確認ダイアログ（Web では window.confirm、Native では Alert）
+function confirmAsync(message: string): Promise<boolean> {
+  if (Platform.OS === 'web') {
+    return Promise.resolve(
+      typeof window !== 'undefined' ? window.confirm(message) : false
+    );
+  }
+  return new Promise((resolve) => {
+    Alert.alert('確認', message, [
+      { text: 'キャンセル', style: 'cancel', onPress: () => resolve(false) },
+      { text: 'OK', onPress: () => resolve(true) },
+    ]);
+  });
+}
+
+// タスク1件の行（タップで再開、長押し or 編集ボタンで編集）
+function DoneRow({
+  task,
+  onReopen,
+  onEdit,
+}: {
+  task: Task;
+  onReopen: (task: Task) => void;
+  onEdit: (task: Task) => void;
+}) {
   const { fs } = useLayout();
   const isFire = task.type === 'fire';
   const tier = task.completedTier ? TIER[task.completedTier] : null;
@@ -50,13 +73,135 @@ function DoneRow({ task }: { task: Task }) {
           {labelText}
         </Text>
       </View>
-      <Text style={[styles.rowText, { fontSize: fs.body }]} numberOfLines={2}>
-        {task.text}
-        <Text style={[styles.rowSub, { fontSize: fs.caption }]}>{minuteLabel}</Text>
-      </Text>
+      <Pressable
+        style={styles.rowTextWrap}
+        onPress={() => onReopen(task)}
+        accessibilityRole="button"
+        accessibilityLabel={`「${task.text}」を再開`}>
+        <Text style={[styles.rowText, { fontSize: fs.body }]} numberOfLines={2}>
+          {task.text}
+          <Text style={[styles.rowSub, { fontSize: fs.caption }]}>{minuteLabel}</Text>
+        </Text>
+      </Pressable>
+      <Pressable
+        onPress={() => onEdit(task)}
+        hitSlop={8}
+        style={styles.editBtn}
+        accessibilityRole="button"
+        accessibilityLabel="このタスクを編集">
+        <Text style={[styles.editTxt, { fontSize: fs.caption }]}>✎</Text>
+      </Pressable>
     </View>
   );
 }
+
+interface EditModalProps {
+  task: Task | null;
+  onClose: () => void;
+  onSave: (id: string, text: string) => void;
+}
+
+function EditModal({ task, onClose, onSave }: EditModalProps) {
+  const { fs } = useLayout();
+  const [text, setText] = useState(task?.text ?? '');
+  useEffect(() => {
+    setText(task?.text ?? '');
+  }, [task]);
+
+  if (!task) return null;
+
+  const save = () => {
+    const next = text.trim();
+    if (next && next !== task.text) onSave(task.id, next);
+    onClose();
+  };
+
+  return (
+    <Modal transparent animationType="fade" visible={!!task} onRequestClose={onClose}>
+      <View style={editStyles.backdrop}>
+        <View style={editStyles.card}>
+          <Text style={[editStyles.title, { fontSize: fs.title }]}>タスクを編集</Text>
+          <TextInput
+            style={[editStyles.input, { fontSize: fs.body }]}
+            value={text}
+            onChangeText={setText}
+            multiline
+            autoFocus
+            placeholder="タスク名"
+            placeholderTextColor={colors.textSecondary}
+          />
+          <View style={editStyles.buttons}>
+            <Pressable style={editStyles.cancelBtn} onPress={onClose}>
+              <Text style={[editStyles.cancelTxt, { fontSize: fs.small }]}>キャンセル</Text>
+            </Pressable>
+            <Pressable style={editStyles.saveBtn} onPress={save}>
+              <Text style={[editStyles.saveTxt, { fontSize: fs.small }]}>保存</Text>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+const editStyles = StyleSheet.create({
+  backdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: spacing.xl,
+  },
+  card: {
+    width: '100%',
+    maxWidth: 400,
+    backgroundColor: colors.surface,
+    borderRadius: 24,
+    padding: spacing.xl,
+    gap: spacing.md,
+  },
+  title: {
+    color: colors.text,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  input: {
+    color: colors.text,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    minHeight: 60,
+    textAlignVertical: 'top',
+  },
+  buttons: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  cancelBtn: {
+    flex: 1,
+    paddingVertical: spacing.md,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+  },
+  cancelTxt: {
+    color: colors.textSecondary,
+    fontWeight: '600',
+  },
+  saveBtn: {
+    flex: 1,
+    paddingVertical: spacing.md,
+    borderRadius: radius.pill,
+    backgroundColor: colors.accentFrom,
+    alignItems: 'center',
+  },
+  saveTxt: {
+    color: '#fff',
+    fontWeight: '700',
+  },
+});
 
 // 達成状況を示すドット（最大5スロット）
 function TierDots({ tasks }: { tasks: Task[] }) {
@@ -79,7 +224,27 @@ function TierDots({ tasks }: { tasks: Task[] }) {
 
 export default function LogScreen() {
   const { doneTasks, loadDoneToday } = useTaskStore();
+  const reopenTask = useTaskStore((s) => s.reopenTask);
+  const updateDoneTask = useTaskStore((s) => s.updateDoneTask);
   const { fs, isDesktop } = useLayout();
+  const [editingTask, setEditingTask] = useState<Task | null>(null);
+
+  const handleReopen = useCallback(
+    async (task: Task) => {
+      const ok = await confirmAsync(
+        `「${task.text}」を今日のタスクに戻して、追加で作業できます。よろしいですか？`
+      );
+      if (ok) await reopenTask(task.id);
+    },
+    [reopenTask]
+  );
+
+  const handleEditSave = useCallback(
+    (id: string, text: string) => {
+      void updateDoneTask(id, { text });
+    },
+    [updateDoneTask]
+  );
 
   useFocusEffect(
     useCallback(() => {
@@ -196,9 +361,17 @@ export default function LogScreen() {
             </Text>
             <View style={styles.taskList}>
               {doneTasks.map((task) => (
-                <DoneRow key={task.id} task={task} />
+                <DoneRow
+                  key={task.id}
+                  task={task}
+                  onReopen={handleReopen}
+                  onEdit={setEditingTask}
+                />
               ))}
             </View>
+            <Text style={[styles.hintText, { fontSize: fs.caption }]}>
+              タップで再開（追加作業・より上の松竹梅へ） / ✎で編集
+            </Text>
 
             {/* 褒めコメントカード */}
             <View style={styles.commentCard}>
@@ -209,6 +382,11 @@ export default function LogScreen() {
           </ScrollView>
         )}
       </View>
+      <EditModal
+        task={editingTask}
+        onClose={() => setEditingTask(null)}
+        onSave={handleEditSave}
+      />
     </SafeAreaView>
   );
 }
@@ -310,10 +488,26 @@ const styles = StyleSheet.create({
   tierPillTxt: {
     fontWeight: '700',
   },
+  rowTextWrap: {
+    flex: 1,
+  },
   rowText: {
     color: colors.text,
-    flex: 1,
     fontWeight: '500',
+  },
+  editBtn: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+  },
+  editTxt: {
+    color: colors.textSecondary,
+    fontWeight: '600',
+  },
+  hintText: {
+    color: colors.textSecondary,
+    textAlign: 'center',
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.sm,
   },
   rowSub: {
     color: colors.textSecondary,
