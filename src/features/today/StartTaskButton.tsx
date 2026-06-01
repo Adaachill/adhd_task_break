@@ -10,7 +10,6 @@ interface Props {
   task: Task;
 }
 
-// 🚀 始める押下後の経過分:秒を返す簡易フック
 function useElapsed(startedAt: number | null): string | null {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -27,23 +26,30 @@ function useElapsed(startedAt: number | null): string | null {
 }
 
 /**
- * 🔵 タスク用の「🚀 始める」ボタン（PR-A 計測ループ）。
- * - 未開始：押下で `blueStartedAt` を記録し、取り掛かりラグ（`timeToStartSeconds`）も保存
- * - 開始済：経過時間 mm:ss を表示
- * - 押下せず直接松竹梅タップも可能（その場合 workedMinutes は null のまま）
+ * 🔵 タスク用の「🚀 始める」「⏸ 中断」ボタン。
+ * - 未開始／中断中：「🚀 始める」を表示
+ * - 開始済：経過時間 + 「⏸ 中断」ボタンを表示
  */
 export function StartTaskButton({ task }: Props) {
   const { fs } = useLayout();
   const startBlueTask = useTaskStore((s) => s.startBlueTask);
+  const pauseBlueTask = useTaskStore((s) => s.pauseBlueTask);
   const elapsed = useElapsed(task.blueStartedAt);
 
   if (task.blueStartedAt !== null) {
     return (
-      <View style={styles.runningPill}>
-        <View style={styles.dot} />
-        <Text style={[styles.runningTxt, { fontSize: fs.small }]}>
-          作業中 {elapsed}
-        </Text>
+      <View style={styles.runningRow}>
+        <View style={styles.runningPill}>
+          <View style={styles.dot} />
+          <Text style={[styles.runningTxt, { fontSize: fs.small }]}>
+            作業中 {elapsed}
+          </Text>
+        </View>
+        <Pressable
+          onPress={() => void pauseBlueTask(task.id)}
+          style={({ pressed }) => [styles.pauseBtn, { opacity: pressed ? 0.7 : 1 }]}>
+          <Text style={[styles.pauseTxt, { fontSize: fs.small }]}>⏸ 中断</Text>
+        </Pressable>
       </View>
     );
   }
@@ -52,7 +58,9 @@ export function StartTaskButton({ task }: Props) {
     <Pressable
       onPress={() => void startBlueTask(task.id)}
       style={({ pressed }) => [styles.btn, { opacity: pressed ? 0.7 : 1 }]}>
-      <Text style={[styles.btnTxt, { fontSize: fs.body }]}>🚀 始める</Text>
+      <Text style={[styles.btnTxt, { fontSize: fs.body }]}>
+        {task.continued === false ? '🚀 再開' : '🚀 始める'}
+      </Text>
     </Pressable>
   );
 }
@@ -69,12 +77,18 @@ const styles = StyleSheet.create({
     color: colors.blue,
     fontWeight: '700',
   },
+  runningRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginTop: spacing.md,
+  },
   runningPill: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: spacing.sm,
-    marginTop: spacing.md,
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.md,
     borderRadius: radius.pill,
@@ -91,5 +105,17 @@ const styles = StyleSheet.create({
   runningTxt: {
     color: colors.blue,
     fontWeight: '700',
+  },
+  pauseBtn: {
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.pill,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  pauseTxt: {
+    color: colors.textSecondary,
+    fontWeight: '600',
   },
 });
