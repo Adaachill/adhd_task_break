@@ -42,6 +42,11 @@ interface TaskState {
   completeFireTask: (id: string, workedMinutes: number) => Promise<void>;
   // 🔵 松竹梅の見積もり分数を更新
   updateShojikubaiEstimates: (id: string, estimates: ShojikubaiEstimates) => Promise<void>;
+  // 今日のタスクの編集（テキスト・タイプ・期限・習慣・見積もり分数）
+  updateTodayTask: (
+    id: string,
+    patch: Partial<Pick<Task, 'text' | 'type' | 'due' | 'isHabit' | 'estimatedMinutes' | 'estimateSource' | 'timerMinutes'>>
+  ) => Promise<void>;
 }
 
 // 当日の 0:00〜翌0:00 のエポックms範囲
@@ -329,6 +334,22 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     const updated: Task = {
       ...task,
       shojikubaiEstimates: estimates,
+      updatedAt: Date.now(),
+    };
+    set((s) => ({
+      todayTasks: s.todayTasks.map((t) => (t.id === id ? updated : t)),
+    }));
+    await updateTask(updated);
+  },
+
+  // 今日のタスクの編集（テキスト・タイプ・期限・習慣・見積もり分数など）
+  updateTodayTask: async (id, patch) => {
+    const task = get().todayTasks.find((t) => t.id === id);
+    if (!task) return;
+
+    const updated: Task = {
+      ...task,
+      ...patch,
       updatedAt: Date.now(),
     };
     set((s) => ({

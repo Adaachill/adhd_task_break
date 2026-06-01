@@ -1,10 +1,12 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
+import type { BadgeOption } from '@/components/ui/BadgeSelector';
+import { BadgeSelector } from '@/components/ui/BadgeSelector';
 import { useLayout } from '@/hooks/useLayout';
 import { useTaskStore } from '@/store/taskStore';
 import { colors, radius, spacing } from '@/theme/tokens';
-import type { ShojikubaiDef, ShojikubaiEstimates, ShojikubaiTier, Task } from '@/types/task';
+import type { DueLabel, ShojikubaiDef, ShojikubaiEstimates, ShojikubaiTier, Task, TaskType } from '@/types/task';
 
 import { BrakeAlertModal } from './BrakeAlertModal';
 import { BrakeTimer } from './BrakeTimer';
@@ -25,6 +27,36 @@ interface Props {
 const MATSU_COLOR = '#FFD600';
 const TAKE_COLOR = colors.accentTo;
 const UME_COLOR = colors.blue;
+
+const TYPE_OPTIONS: (BadgeOption & { value: TaskType })[] = [
+  { label: '🔵 TODO', tone: 'blue', value: 'blue' },
+  { label: '🔥 沼', tone: 'fire', value: 'fire' },
+];
+
+const DUE_LABEL: Record<DueLabel, string> = {
+  today: '今日',
+  tomorrow: '明日',
+  someday: 'いつか',
+};
+
+const DUE_OPTIONS: (BadgeOption & { value: DueLabel })[] = [
+  { label: '今日', tone: 'due', value: 'today' },
+  { label: '明日', tone: 'due', value: 'tomorrow' },
+  { label: 'いつか', tone: 'due', value: 'someday' },
+];
+
+const HABIT_OPTIONS: (BadgeOption & { value: boolean })[] = [
+  { label: '単発', tone: 'muted', value: false },
+  { label: '🔁 習慣', tone: 'habit', value: true },
+];
+
+const TYPE_CYCLE: TaskType[] = ['blue', 'fire'];
+const DUE_CYCLE: DueLabel[] = ['today', 'tomorrow', 'someday'];
+
+function cycleNext<T>(cycle: T[], current: T): T {
+  const i = cycle.indexOf(current);
+  return cycle[(i + 1) % cycle.length];
+}
 
 function getLastCompletedTier(doneTasks: Task[], taskText: string): ShojikubaiTier | null {
   const match = doneTasks.find((t) => t.text === taskText && t.completedTier != null);
@@ -151,13 +183,48 @@ export function TodayTaskCard({ task, canMoveUp, canMoveDown, onMoveUp, onMoveDo
   const updateShojikubai = useTaskStore((s) => s.updateShojikubai);
   const moveToInbox = useTaskStore((s) => s.moveToInbox);
   const updateShojikubaiEstimates = useTaskStore((s) => s.updateShojikubaiEstimates);
+  const updateTodayTask = useTaskStore((s) => s.updateTodayTask);
   const doneTasks = useTaskStore((s) => s.doneTasks);
-  const { fs } = useLayout();
+  const { fs, isDesktop } = useLayout();
 
   const [doneTier, setDoneTier] = useState<ShojikubaiTier | null>(null);
   const [fireDone, setFireDone] = useState(false);
   const [brakeAlert, setBrakeAlert] = useState(false);
   const [showTierModal, setShowTierModal] = useState(false);
+
+  // 編集モード：タイトル
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [titleText, setTitleText] = useState(task.text);
+  useEffect(() => {
+    setTitleText(task.text);
+  }, [task.text]);
+
+  // 編集：見積もり分数
+  const [estimateText, setEstimateText] = useState(
+    task.estimatedMinutes != null ? String(task.estimatedMinutes) : ''
+  );
+  useEffect(() => {
+    setEstimateText(task.estimatedMinutes != null ? String(task.estimatedMinutes) : '');
+  }, [task.estimatedMinutes]);
+
+  const commitTitle = () => {
+    const next = titleText.trim();
+    setEditingTitle(false);
+    if (!next || next === task.text) {
+      setTitleText(task.text);
+      return;
+    }
+    void updateTodayTask(task.id, { text: next });
+  };
+
+  const commitEstimate = () => {
+    const mins = parseInt(estimateText, 10);
+    if (!isNaN(mins) && mins > 0) {
+      void updateTodayTask(task.id, { estimatedMinutes: mins, estimateSource: 'manual' });
+    } else if (estimateText === '') {
+      void updateTodayTask(task.id, { estimatedMinutes: null, estimateSource: null });
+    }
+  };
 
   const lastCompletedTier = getLastCompletedTier(doneTasks, task.text);
 
@@ -224,14 +291,65 @@ export function TodayTaskCard({ task, canMoveUp, canMoveDown, onMoveUp, onMoveDo
   const isFire = task.type === 'fire';
   const isBlue = task.type === 'blue';
   const borderColor = isFire ? colors.fireFrom : isBlue ? colors.blue : colors.border;
+  const timerRunning = task.timerStartedAt != null;
+
+  const typeBadge: BadgeOption = isFire
+    ? { label: '🔥 沼', tone: 'fire' }
+    : { label: '🔵 TODO', tone: 'blue' };
+  const dueBadge: BadgeOption = task.due
+    ? { label: DUE_LABEL[task.due], tone: 'due' }
+    : { label: '＋ 期限', tone: 'muted' };
+  const habitBadge: BadgeOption = task.isHabit
+    ? { label: '🔁 習慣', tone: 'habit' }
+    : { label: '単発', tone: 'muted' };
 
   return (
     <>
       <View style={[styles.card, { borderColor }]}>
         <View style={styles.header}>
-          <Text style={[styles.typeTag, { fontSize: fs.caption, color: isFire ? colors.fireFrom : colors.blue }]}>
-            {isFire ? '🔥 沼タスク' : isBlue ? '🔵 TODO' : 'タスク'}
-          </Text>
+          <View style={styles.badgeRow}>
+            <BadgeSelector
+              label={typeBadge.label}
+              tone={typeBadge.tone}
+              options={TYPE_OPTIONS}
+              fontSize={fs.caption}
+              isDesktop={isDesktop}
+              onSelect={(i) =>
+                updateTodayTask(task.id, { type: TYPE_OPTIONS[i]?.value ?? 'blue' })
+              }
+              onCycle={() =>
+                updateTodayTask(task.id, {
+                  type: cycleNext(TYPE_CYCLE, (task.type ?? 'blue') as TaskType),
+                })
+              }
+            />
+            <BadgeSelector
+              label={dueBadge.label}
+              tone={dueBadge.tone}
+              options={DUE_OPTIONS}
+              fontSize={fs.caption}
+              isDesktop={isDesktop}
+              onSelect={(i) =>
+                updateTodayTask(task.id, { due: DUE_OPTIONS[i]?.value ?? 'today' })
+              }
+              onCycle={() =>
+                updateTodayTask(task.id, {
+                  due: cycleNext(DUE_CYCLE, (task.due ?? 'today') as DueLabel),
+                })
+              }
+            />
+            <BadgeSelector
+              label={habitBadge.label}
+              tone={habitBadge.tone}
+              options={HABIT_OPTIONS}
+              fontSize={fs.caption}
+              isDesktop={isDesktop}
+              onSelect={(i) =>
+                updateTodayTask(task.id, { isHabit: HABIT_OPTIONS[i]?.value ?? false })
+              }
+              onCycle={() => updateTodayTask(task.id, { isHabit: !task.isHabit })}
+            />
+          </View>
           <View style={styles.headerActions}>
             {(canMoveUp || canMoveDown) && (
               <View style={styles.reorderBtns}>
@@ -261,7 +379,42 @@ export function TodayTaskCard({ task, canMoveUp, canMoveDown, onMoveUp, onMoveDo
           </View>
         </View>
 
-        <Text style={[styles.text, { fontSize: fs.body }]}>{task.text}</Text>
+        {editingTitle ? (
+          <TextInput
+            style={[styles.text, styles.textInput, { fontSize: fs.body }]}
+            value={titleText}
+            onChangeText={setTitleText}
+            onBlur={commitTitle}
+            onSubmitEditing={commitTitle}
+            autoFocus
+            returnKeyType="done"
+            multiline
+            accessibilityLabel="タスク名を編集"
+          />
+        ) : (
+          <Pressable onPress={() => setEditingTitle(true)} accessibilityRole="button">
+            <Text style={[styles.text, { fontSize: fs.body }]}>{task.text}</Text>
+          </Pressable>
+        )}
+
+        {/* 見積もり分数の編集 */}
+        <View style={styles.estimateRow}>
+          <Text style={[styles.estimateLabel, { fontSize: fs.caption }]}>⏱ 見積もり</Text>
+          <TextInput
+            style={[styles.estimateInput, { fontSize: fs.caption }]}
+            value={estimateText}
+            onChangeText={setEstimateText}
+            onBlur={commitEstimate}
+            onSubmitEditing={commitEstimate}
+            placeholder="分"
+            placeholderTextColor={colors.textSecondary}
+            keyboardType="numeric"
+            returnKeyType="done"
+            editable={!timerRunning}
+            accessibilityLabel="見積もり分数"
+          />
+          <Text style={[styles.estimateLabel, { fontSize: fs.caption }]}>分</Text>
+        </View>
 
         {/* 🔵: AI見積もり + 松竹梅内容入力 + 見積もり時間 + 🚀始める + 完了 */}
         {isBlue && (
@@ -344,6 +497,35 @@ const styles = StyleSheet.create({
   },
   typeTag: {
     fontWeight: '600',
+  },
+  badgeRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.xs,
+    flex: 1,
+    zIndex: 2,
+  },
+  textInput: {
+    borderBottomWidth: 1,
+    borderBottomColor: colors.accentFrom,
+    paddingVertical: 2,
+  },
+  estimateRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: spacing.sm,
+    gap: spacing.xs,
+  },
+  estimateLabel: {
+    color: colors.textSecondary,
+  },
+  estimateInput: {
+    color: colors.text,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.textSecondary,
+    paddingVertical: 2,
+    minWidth: 50,
+    textAlign: 'center',
   },
   headerActions: {
     flexDirection: 'row',
