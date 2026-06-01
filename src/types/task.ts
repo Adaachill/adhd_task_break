@@ -35,6 +35,8 @@ export interface Task {
   timerMinutes: number | null;
   // 🔥 タイマー開始エポックms（絶対時刻ベース）
   timerStartedAt: number | null;
+  // 🔥 中断時間までにどこまでやりたいかという作業目標（タイマー開始時に入力）
+  timerGoal: string | null;
 
   // 実際に動けた分数（褒めログ集計用。🔥は実測、🔵は開始してから完了まで）
   workedMinutes: number | null;

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import type { BadgeOption } from '@/components/ui/BadgeSelector';
 import { BadgeSelector } from '@/components/ui/BadgeSelector';
@@ -184,6 +184,7 @@ export function TodayTaskCard({ task, canMoveUp, canMoveDown, onMoveUp, onMoveDo
   const moveToInbox = useTaskStore((s) => s.moveToInbox);
   const updateShojikubaiEstimates = useTaskStore((s) => s.updateShojikubaiEstimates);
   const updateTodayTask = useTaskStore((s) => s.updateTodayTask);
+  const reopenTask = useTaskStore((s) => s.reopenTask);
   const doneTasks = useTaskStore((s) => s.doneTasks);
   const { fs, isDesktop } = useLayout();
 
@@ -191,6 +192,7 @@ export function TodayTaskCard({ task, canMoveUp, canMoveDown, onMoveUp, onMoveDo
   const [fireDone, setFireDone] = useState(false);
   const [brakeAlert, setBrakeAlert] = useState(false);
   const [showTierModal, setShowTierModal] = useState(false);
+  const [goalPraise, setGoalPraise] = useState<string | null>(null);
 
   // 編集モード：タイトル
   const [editingTitle, setEditingTitle] = useState(false);
@@ -246,7 +248,11 @@ export function TodayTaskCard({ task, canMoveUp, canMoveDown, onMoveUp, onMoveDo
   const handleExtend = async () => {
     setBrakeAlert(false);
     await stopBrakeTimer(task.id);
-    await startBrakeTimer(task.id, 15);
+    await startBrakeTimer(task.id, 15, task.timerGoal ?? '');
+  };
+
+  const handleGoalCheck = (achieved: boolean, goal: string) => {
+    if (achieved) setGoalPraise(goal);
   };
 
   const handleFireComplete = async (workedMinutes: number) => {
@@ -290,7 +296,14 @@ export function TodayTaskCard({ task, canMoveUp, canMoveDown, onMoveUp, onMoveDo
 
   const isFire = task.type === 'fire';
   const isBlue = task.type === 'blue';
-  const borderColor = isFire ? colors.fireFrom : isBlue ? colors.blue : colors.border;
+  const isCompleted = task.status === 'done';
+  const borderColor = isCompleted
+    ? colors.success
+    : isFire
+      ? colors.fireFrom
+      : isBlue
+        ? colors.blue
+        : colors.border;
   const timerRunning = task.timerStartedAt != null;
 
   const typeBadge: BadgeOption = isFire
@@ -416,8 +429,23 @@ export function TodayTaskCard({ task, canMoveUp, canMoveDown, onMoveUp, onMoveDo
           <Text style={[styles.estimateLabel, { fontSize: fs.caption }]}>分</Text>
         </View>
 
+        {/* 完了済み（習慣化タスクのみ today に残る）: 再開ボタン */}
+        {isCompleted && (
+          <View style={styles.completedRow}>
+            <Text style={[styles.completedLabel, { fontSize: fs.caption }]}>
+              ✅ 完了済み{task.completedTier ? `（${task.completedTier === 'matsu' ? '松' : task.completedTier === 'take' ? '竹' : '梅'}）` : ''}
+            </Text>
+            <Pressable
+              style={styles.reopenBtn}
+              onPress={() => reopenTask(task.id)}
+              accessibilityRole="button">
+              <Text style={[styles.reopenTxt, { fontSize: fs.small }]}>↻ 再開して追加作業</Text>
+            </Pressable>
+          </View>
+        )}
+
         {/* 🔵: AI見積もり + 松竹梅内容入力 + 見積もり時間 + 🚀始める + 完了 */}
-        {isBlue && (
+        {!isCompleted && isBlue && (
           <>
             <EstimateChip task={task} />
             <ShojikubaiEditor value={task.shojikubai} onSave={handleSaveShojikubai} />
@@ -436,22 +464,28 @@ export function TodayTaskCard({ task, canMoveUp, canMoveDown, onMoveUp, onMoveDo
         )}
 
         {/* 🔥: ブレーキタイマー */}
-        {isFire && (
+        {!isCompleted && isFire && (
           <BrakeTimer
             task={task}
             onTimeUp={handleTimeUp}
             onComplete={handleFireComplete}
             onPause={handleFirePause}
+            onGoalCheck={handleGoalCheck}
           />
         )}
 
         {/* 属性なしタスク: 完了ボタン */}
-        {!isBlue && !isFire && (
+        {!isCompleted && !isBlue && !isFire && (
           <Pressable style={styles.doneBtn} onPress={() => handleSelectTier('take')}>
             <Text style={[styles.doneTxt, { fontSize: fs.body }]}>完了</Text>
           </Pressable>
         )}
       </View>
+
+      {/* 🔥 作業目標を達成したときの褒め演出 */}
+      {goalPraise !== null && (
+        <GoalAchievedOverlay goal={goalPraise} onClose={() => setGoalPraise(null)} />
+      )}
 
       {doneTier && (
         <DoneOverlay tier={doneTier} taskText={task.text} onClose={handleDoneClose} />
@@ -480,6 +514,75 @@ export function TodayTaskCard({ task, canMoveUp, canMoveDown, onMoveUp, onMoveDo
     </>
   );
 }
+
+function GoalAchievedOverlay({ goal, onClose }: { goal: string; onClose: () => void }) {
+  const { fs } = useLayout();
+  return (
+    <Modal transparent animationType="fade" visible>
+      <Pressable style={praiseStyles.backdrop} onPress={onClose}>
+        <View style={praiseStyles.card}>
+          <Text style={[praiseStyles.emoji, { fontSize: fs.title * 3 }]}>🎯</Text>
+          <Text style={[praiseStyles.title, { fontSize: fs.title * 1.3 }]}>目標達成！</Text>
+          {goal && (
+            <Text style={[praiseStyles.goal, { fontSize: fs.body }]}>「{goal}」</Text>
+          )}
+          <Text style={[praiseStyles.body, { fontSize: fs.small }]}>
+            自分で宣言したゴールに到達できた！{'\n'}
+            時間どおりにブレーキを踏めたあなた、最高です。
+          </Text>
+          <Pressable style={praiseStyles.closeBtn} onPress={onClose}>
+            <Text style={[praiseStyles.closeText, { fontSize: fs.body }]}>次へ</Text>
+          </Pressable>
+        </View>
+      </Pressable>
+    </Modal>
+  );
+}
+
+const praiseStyles = StyleSheet.create({
+  backdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: spacing.xl,
+  },
+  card: {
+    width: '100%',
+    maxWidth: 360,
+    backgroundColor: colors.surface,
+    borderRadius: 24,
+    padding: spacing.xxl,
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  emoji: {},
+  title: {
+    color: colors.fireFrom,
+    fontWeight: '800',
+  },
+  goal: {
+    color: colors.text,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  body: {
+    color: colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 22,
+  },
+  closeBtn: {
+    marginTop: spacing.sm,
+    paddingHorizontal: spacing.xxl,
+    paddingVertical: spacing.md,
+    backgroundColor: colors.fireFrom,
+    borderRadius: 999,
+  },
+  closeText: {
+    color: '#fff',
+    fontWeight: '700',
+  },
+});
 
 const styles = StyleSheet.create({
   card: {
@@ -564,5 +667,25 @@ const styles = StyleSheet.create({
   doneTxt: {
     color: colors.accentFrom,
     fontWeight: '700',
+  },
+  completedRow: {
+    marginTop: spacing.md,
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  completedLabel: {
+    color: colors.success,
+    fontWeight: '600',
+  },
+  reopenBtn: {
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  reopenTxt: {
+    color: colors.textSecondary,
+    fontWeight: '600',
   },
 });

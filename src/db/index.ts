@@ -58,6 +58,8 @@ async function migrate(db: SQLite.SQLiteDatabase): Promise<void> {
     'ALTER TABLE tasks ADD COLUMN estimate_source TEXT',
     // 松竹梅ごとの見積もり分数
     'ALTER TABLE tasks ADD COLUMN shojikubai_estimates TEXT',
+    // 🔥 沼タスクの作業目標（中断時間までにどこまでやりたいか）
+    'ALTER TABLE tasks ADD COLUMN timer_goal TEXT',
   ]) {
     try {
       await db.execAsync(col);

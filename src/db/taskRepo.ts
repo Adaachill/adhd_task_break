@@ -25,6 +25,7 @@ interface TaskRow {
   estimate_rationale: string | null;
   estimate_source: string | null;
   shojikubai_estimates: string | null;
+  timer_goal: string | null;
   completed_at: number | null;
   created_at: number;
   updated_at: number;
@@ -56,6 +57,7 @@ function rowToTask(r: TaskRow): Task {
     shojikubaiEstimates: r.shojikubai_estimates
       ? (JSON.parse(r.shojikubai_estimates) as ShojikubaiEstimates)
       : null,
+    timerGoal: r.timer_goal,
     completedAt: r.completed_at,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
@@ -70,9 +72,9 @@ export async function insertTask(task: Task): Promise<void> {
         shojikubai, completed_tier, timer_minutes, timer_started_at, worked_minutes,
         moved_to_today_at, blue_started_at, time_to_start_seconds, continued,
         estimated_minutes, estimated_difficulty, estimated_resistance,
-        estimate_rationale, estimate_source, shojikubai_estimates,
+        estimate_rationale, estimate_source, shojikubai_estimates, timer_goal,
         completed_at, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       task.id,
       task.text,
@@ -96,6 +98,7 @@ export async function insertTask(task: Task): Promise<void> {
       task.estimateRationale,
       task.estimateSource,
       task.shojikubaiEstimates ? JSON.stringify(task.shojikubaiEstimates) : null,
+      task.timerGoal,
       task.completedAt,
       task.createdAt,
       task.updatedAt,
@@ -111,8 +114,19 @@ export async function listInbox(): Promise<Task[]> {
   return rows.map(rowToTask);
 }
 
-export async function listToday(): Promise<Task[]> {
+export async function listToday(todayStartMs?: number, todayEndMs?: number): Promise<Task[]> {
   const db = await getDb();
+  // 習慣化タスクは完了しても当日中は今日のタスクタブに残す（再開・追加作業のため）
+  if (todayStartMs != null && todayEndMs != null) {
+    const rows = await db.getAllAsync<TaskRow>(
+      `SELECT * FROM tasks
+       WHERE status = 'today'
+          OR (status = 'done' AND is_habit = 1 AND completed_at >= ? AND completed_at < ?)
+       ORDER BY created_at ASC`,
+      [todayStartMs, todayEndMs]
+    );
+    return rows.map(rowToTask);
+  }
   const rows = await db.getAllAsync<TaskRow>(
     `SELECT * FROM tasks WHERE status = 'today' ORDER BY created_at ASC`
   );
@@ -140,6 +154,7 @@ export async function updateTask(task: Task): Promise<void> {
          estimated_minutes = ?, estimated_difficulty = ?, estimated_resistance = ?,
          estimate_rationale = ?, estimate_source = ?,
          shojikubai_estimates = ?,
+         timer_goal = ?,
          completed_at = ?, updated_at = ?
      WHERE id = ?`,
     [
@@ -164,6 +179,7 @@ export async function updateTask(task: Task): Promise<void> {
       task.estimateRationale,
       task.estimateSource,
       task.shojikubaiEstimates ? JSON.stringify(task.shojikubaiEstimates) : null,
+      task.timerGoal,
       task.completedAt,
       task.updatedAt,
       task.id,

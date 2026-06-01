@@ -1,5 +1,53 @@
 # 開発履歴
 
+## 2026-06-01: 習慣タスクの常駐 / 完了タスク再開 / 沼タスクに作業目標フロー
+**ブランチ:** claude/blissful-bell-3H2Gp
+
+### 変更内容
+- `src/types/task.ts`: `Task` に `timerGoal: string | null` を追加（🔥 沼タスクの中断時間までの作業目標）
+- `src/db/index.ts`: `timer_goal TEXT` カラムをマイグレーションに追加
+- `src/db/taskRepo.ts`:
+  - `timer_goal` を行マッピング・INSERT・UPDATE に追加
+  - `listToday(start, end)` を拡張：習慣化タスク（`is_habit=1`）が当日完了した場合も今日のタスクとして返す
+- `src/store/taskStore.ts`:
+  - `loadToday` を当日範囲付きで呼び出すよう変更（習慣完了タスクを today に残す）
+  - `completeShojikubai` / `completeFireTask`：習慣タスクは完了しても `todayTasks` から消さない（done としても保持し、`doneTasks` にも入れる）
+  - `stopBrakeTimer`：中断時に経過分数を `workedMinutes` に積算するよう修正（従来は単にタイマーを止めるだけだった）
+  - `startBrakeTimer(id, minutes, goal, notificationId?)`：作業目標を受け取って保存
+  - 新規 `reopenTask(id)`：完了タスクを today に戻す（完了情報をクリアして再度より上の松竹梅を選べるように）
+  - 新規 `updateDoneTask(id, patch)`：ほめログからの編集用
+  - `addTask` の初期値に `timerGoal: null` を追加
+- `src/features/today/BrakeTimer.tsx`:
+  - 時間選択 → 作業目標入力モーダル → タイマー開始 の二段階フローに
+  - タイマー実行中に 🎯 目標チップを表示
+  - 「終わった！」/「⏸ 中断」時に目標達成確認モーダルを出し、「達成できた！」を選ぶと褒める演出（`GoalAchievedOverlay`）を表示
+- `src/features/today/TodayTaskCard.tsx`:
+  - `task.status === 'done'` のとき（＝完了済み習慣タスク）「再開して追加作業」ボタンを表示し、`reopenTask` を呼ぶ
+  - 完了済みカードはサクセスカラーで縁取り
+  - 🎯 目標達成時の `GoalAchievedOverlay` を追加
+- `src/app/(tabs)/today.tsx`:
+  - 枠カウント（MAX_TODAY=3）は `status==='done'` のタスクを除外（完了済み習慣タスクは枠を消費しない）
+- `src/app/(tabs)/log.tsx`:
+  - 行タップで `reopenTask`（確認ダイアログ付き、Web は `window.confirm`、Native は `Alert.alert`）
+  - 行右端の ✎ ボタンで `EditModal` を開き、タスク名を編集（`updateDoneTask` を呼ぶ）
+
+### 変更意図・背景
+- 習慣化タスクは毎日繰り返す性質なので、完了しても今日のタスクタブから消えてしまうと「今日もうやったっけ？」が分からなくなる。当日中は残して達成済みの状態で見せる。
+- 完了したタスクでも、追加で作業して梅→竹→松へとレベルアップしたいというユーザーニーズに応える。ほめログのタスクをタップで再開できるようにすることで、達成感を上書きできるようにする。
+- 編集を「今日のタスク」「ほめログ」「PC/スマホ」のいずれでもできるようにする。ほめログの編集は最低限「タスク名」だけだが、Modal で React Native Web / iOS / Android 共通で動く。
+- 🔥 沼タスクは「時間を決めて中断」だけだと、何をどこまでやるかが曖昧で目標達成感が得にくい。タイマー開始前に「中断時間までにどこまで」をユーザーに宣言させ、中断/完了時に達成できたかを聞くことで、自己効力感を高める褒めアクションを設けた。中断時には経過時間を `workedMinutes` に積算するため、純粋な「ちょっと止めた」も作業時間として残る。
+
+### 技術的決定事項
+- 完了済み習慣タスクを today に残す方法：DB の status は `done` のままにし、`listToday` が「`is_habit=1` かつ当日完了」を OR でマージして返す。`status` をいじらないので褒めログ集計（`listDoneBetween`）も従来どおり動く。
+- `stopBrakeTimer` を「中断時間積算」に拡張：従来は別途明示的に積算する経路がなく、🔥 タスクの中断は時間がカウントされていなかった。
+- 作業目標は `Task` 自体のカラム（`timerGoal`）として保持。タイマー開始ごとに上書きされ、リスタート（タイマー延長）時は前の goal を引き継ぐ。
+- ほめログ画面の編集は本格的な再利用カードではなく軽量モーダル。タップで再開する主動線とぶつからないよう、編集は専用の ✎ ボタンに分離した。
+
+### 残課題・次のステップ
+- 編集モーダルでタスク名以外（タイプ・期限・習慣・見積もり）も編集できるようにする
+- 🎯 目標達成の褒めコメントを `praiseComment` サービスと統合してバリエーション化
+- 再開後にもう一度 🔥 タイマーを動かしたとき、前回の workedMinutes を引き継ぐかリセットするかの仕様確認（現状は引き継ぐ＝累積）
+
 ## 2026-06-01: 今日のタスクタブで編集可能に（タイトル・タイプ・期限・習慣・見積もり）
 **ブランチ:** claude/charming-goldberg-vT0zT
 
