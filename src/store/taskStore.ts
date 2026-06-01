@@ -74,14 +74,24 @@ export const useTaskStore = create<TaskState>((set, get) => ({
 
     const now = Date.now();
     const result = await classify(text, get().aiEnabled);
+
+    // 当日のタスクがあれば前回の分類を引き継ぐ。なければデフォルト（動ける/今日/単発）
+    const prevTask = get().tasks.at(-1);
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const prevIsToday = prevTask != null && prevTask.createdAt >= todayStart.getTime();
+    const fallback = prevIsToday
+      ? { type: prevTask!.type, due: prevTask!.due, isHabit: prevTask!.isHabit }
+      : { type: 'blue' as const, due: 'today' as const, isHabit: false };
+
     const task: Task = {
       id: genId(),
       text,
-      type: result.type,
-      due: result.due,
-      isHabit: false,
+      type: result.type ?? fallback.type,
+      due: result.due ?? fallback.due,
+      isHabit: fallback.isHabit,
       status: 'inbox',
-      classifySource: result.type || result.due ? 'ai' : 'unclassified',
+      classifySource: result.type || result.due ? 'ai' : prevIsToday ? 'manual' : 'unclassified',
       shojikubai: null,
       completedTier: null,
       timerMinutes: null,
@@ -109,10 +119,11 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     const current = get().tasks.find((t) => t.id === id);
     if (!current) return;
 
+    const isClassificationChange = 'type' in patch || 'due' in patch || 'isHabit' in patch;
     const updated: Task = {
       ...current,
       ...patch,
-      classifySource: patch.classifySource ?? 'manual',
+      classifySource: patch.classifySource ?? (isClassificationChange ? 'manual' : current.classifySource),
       updatedAt: Date.now(),
     };
 

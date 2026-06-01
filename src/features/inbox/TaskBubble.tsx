@@ -1,4 +1,5 @@
-import { StyleSheet, Text, View } from 'react-native';
+import { useState } from 'react';
+import { StyleSheet, Text, TextInput, View } from 'react-native';
 
 import type { BadgeOption } from '@/components/ui/BadgeSelector';
 import { BadgeSelector } from '@/components/ui/BadgeSelector';
@@ -45,6 +46,18 @@ function next<T>(cycle: T[], current: T): T {
 export function TaskBubble({ task }: { task: Task }) {
   const update = useTaskStore((s) => s.updateClassification);
   const { isDesktop, fs } = useLayout();
+  const [estimateText, setEstimateText] = useState(
+    task.estimatedMinutes != null ? String(task.estimatedMinutes) : ''
+  );
+
+  const onCommitEstimate = () => {
+    const mins = parseInt(estimateText, 10);
+    if (!isNaN(mins) && mins > 0) {
+      void update(task.id, { estimatedMinutes: mins, estimateSource: 'manual' });
+    } else if (estimateText === '') {
+      void update(task.id, { estimatedMinutes: null, estimateSource: null });
+    }
+  };
 
   const onCycleType = () => update(task.id, { type: next(TYPE_CYCLE, task.type) });
   const onCycleDue = () => update(task.id, { due: next(DUE_CYCLE, task.due) });
@@ -114,6 +127,20 @@ export function TaskBubble({ task }: { task: Task }) {
             onCycle={onCycleHabit}
           />
         </View>
+        <View style={styles.estimateRow}>
+          <Text style={[styles.estimateLabel, { fontSize: fs.caption }]}>⏱</Text>
+          <TextInput
+            style={[styles.estimateInput, { fontSize: fs.caption }]}
+            value={estimateText}
+            onChangeText={setEstimateText}
+            onBlur={onCommitEstimate}
+            onSubmitEditing={onCommitEstimate}
+            placeholder="見積もり（分）"
+            placeholderTextColor={colors.textSecondary}
+            keyboardType="numeric"
+            returnKeyType="done"
+          />
+        </View>
       </Bubble>
     </View>
   );
@@ -136,5 +163,23 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     // ドロップダウンが上に重なるよう zIndex を確保
     zIndex: 1,
+  },
+  estimateRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: spacing.sm,
+    gap: spacing.xs,
+  },
+  estimateLabel: {
+    color: colors.textSecondary,
+  },
+  estimateInput: {
+    flex: 1,
+    color: colors.text,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.textSecondary,
+    paddingVertical: 2,
+    minWidth: 60,
+    maxWidth: 120,
   },
 });

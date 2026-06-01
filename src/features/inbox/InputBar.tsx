@@ -32,7 +32,7 @@ export function InputBar() {
         onChangeText={setText}
         placeholder="タスクを書き留める…"
         placeholderTextColor={colors.textSecondary}
-        multiline
+        multiline={!isDesktop}
         onSubmitEditing={onSend}
         returnKeyType="send"
         blurOnSubmit={false}
