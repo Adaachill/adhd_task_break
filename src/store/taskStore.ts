@@ -4,7 +4,7 @@ import { insertTask, listDoneBetween, listInbox, listToday, updateTask } from '@
 import { estimateTask as aiEstimateTask } from '@/services/ai/deepseek';
 import type { AiHistoryEntry } from '@/services/ai/types';
 import { classify } from '@/services/classify';
-import type { ClassificationPatch, ShojikubaiTier, Task } from '@/types/task';
+import type { ClassificationPatch, ShojikubaiEstimates, ShojikubaiTier, Task } from '@/types/task';
 
 function genId(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
@@ -36,6 +36,8 @@ interface TaskState {
   stopBrakeTimer: (id: string) => Promise<void>;
   // 🔥 タスク完了（実測分数を記録）
   completeFireTask: (id: string, workedMinutes: number) => Promise<void>;
+  // 🔵 松竹梅の見積もり分数を更新
+  updateShojikubaiEstimates: (id: string, estimates: ShojikubaiEstimates) => Promise<void>;
 }
 
 // 当日の 0:00〜翌0:00 のエポックms範囲
@@ -94,6 +96,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
       classifySource: result.type || result.due ? 'ai' : prevIsToday ? 'manual' : 'unclassified',
       shojikubai: null,
       completedTier: null,
+      shojikubaiEstimates: null,
       timerMinutes: null,
       timerStartedAt: null,
       workedMinutes: null,
@@ -268,6 +271,22 @@ export const useTaskStore = create<TaskState>((set, get) => ({
       updatedAt: Date.now(),
     };
 
+    set((s) => ({
+      todayTasks: s.todayTasks.map((t) => (t.id === id ? updated : t)),
+    }));
+    await updateTask(updated);
+  },
+
+  // 🔵 松竹梅の見積もり分数を更新
+  updateShojikubaiEstimates: async (id: string, estimates: ShojikubaiEstimates) => {
+    const task = get().todayTasks.find((t) => t.id === id);
+    if (!task) return;
+
+    const updated: Task = {
+      ...task,
+      shojikubaiEstimates: estimates,
+      updatedAt: Date.now(),
+    };
     set((s) => ({
       todayTasks: s.todayTasks.map((t) => (t.id === id ? updated : t)),
     }));

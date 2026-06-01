@@ -28,6 +28,8 @@ export interface Task {
   shojikubai: ShojikubaiDef | null;
   // 🔵 完了時の達成レベル
   completedTier: ShojikubaiTier | null;
+  // 🔵 松竹梅ごとの見積もり分数（松は必須、竹・梅は任意）
+  shojikubaiEstimates: ShojikubaiEstimates | null;
 
   // 🔥 制限分数（開始前に選択）
   timerMinutes: number | null;
@@ -63,6 +65,12 @@ export interface ShojikubaiDef {
   ume: string; // 梅: 1秒でできる最低限の行動
   take: string; // 竹: 通常の最低基準
   matsu: string; // 松: 目指さなくてOKな理想
+}
+
+export interface ShojikubaiEstimates {
+  matsu: number | null; // 松の見積もり分数（必須）
+  take: number | null;  // 竹の見積もり分数（任意）
+  ume: number | null;   // 梅の見積もり分数（任意）
 }
 
 // 分類で更新しうるフィールドのパッチ

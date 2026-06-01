@@ -1,5 +1,33 @@
 # 開発履歴
 
+## 2026-06-01: 松竹梅ごとの見積もり入力・完了時 tier 選択モーダル
+**ブランチ:** claude/vigilant-albattani-nWlW1
+
+### 変更内容
+- `src/types/task.ts`: `ShojikubaiEstimates`型を追加（matsu/take/ume の見積もり分数を保持）、`Task`に`shojikubaiEstimates`フィールドを追加
+- `src/db/index.ts`: `shojikubai_estimates` カラムのマイグレーションを追加
+- `src/db/taskRepo.ts`: 新フィールドの insert/update/rowToTask 対応
+- `src/store/taskStore.ts`: `updateShojikubaiEstimates`アクションを追加、addTaskの初期化に`shojikubaiEstimates: null`を追加
+- `src/features/today/TierSelectModal.tsx`（新規）: 完了時にどのtierを達成したか選ぶモーダル。前回完了tierに応じてデフォルト選択を変化（松→竹→梅の順）
+- `src/features/today/TodayTaskCard.tsx`: 🔵タスクに松竹梅の見積もり入力行（松は必須表示・黄色ボーダー）を追加。ShojikubaiButtonsを「完了 →」ボタン＋TierSelectModalに変更
+- `src/app/(tabs)/log.tsx`: DoneRowに見積もり分数表示を追加（例: `45分/30分`）
+
+### 変更意図・背景
+ADHD向けの「最初の行動をしやすくする」設計改善。
+松（理想）だけを必須見積もりにし、竹・梅は任意にすることで記入負担を最小化。
+完了時は「3ボタンを即タップ」ではなく、達成レベルをモーダルで選ぶ体験に変更し、「どこまでやれたか」を意識的に振り返れるようにした。
+前回完了tierをデフォルトに反映することで、習慣タスクで毎回同じtierを選ぶ手間を削減。
+
+### 技術的決定事項
+- ShojikubaiEstimates は Task 本体に JSON フィールドとして持たせた（ShojikubaiDef と同様の設計）
+- TierEstimateRow をTodayTaskCard内のローカルコンポーネントとして実装（外部からのpropsが複雑になるため）
+- デフォルト tier の決定ロジック：doneTasks から同テキストの最新完了を検索（習慣タスクの反復利用を想定）
+- workedMinutes のリアルタイム計算（blueStartedAt から現在時刻）をモーダルに渡し、実績時間をその場で確認可能に
+
+### 残課題・次のステップ
+- 習慣タスクの「前回tier」を task.id ではなく task.text でマッチングしているため、テキスト変更時に履歴が途切れる
+- 見積もり入力を Inbox 画面に移動するか Today 画面に残すか、UX 検証が必要
+
 ## 2026-06-01: 褒めログ UI 再設計 — ルールベース褒めコメント実装
 **ブランチ:** claude/amazing-brahmagupta-ov0FY
 
