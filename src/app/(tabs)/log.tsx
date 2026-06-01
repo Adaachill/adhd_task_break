@@ -1,77 +1,79 @@
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useMemo } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useLayout } from '@/hooks/useLayout';
-import { shareText } from '@/services/share';
+import { buildPraiseComment } from '@/services/praiseComment';
 import { useTaskStore } from '@/store/taskStore';
 import { colors, radius, spacing } from '@/theme/tokens';
 import type { ShojikubaiTier, Task } from '@/types/task';
 
-const TIER_BADGE: Record<ShojikubaiTier, { label: string; color: string; bg: string }> = {
-  ume: { label: '梅', color: colors.blue, bg: 'rgba(91,141,239,0.18)' },
-  take: { label: '竹', color: colors.accentTo, bg: 'rgba(139,92,246,0.18)' },
-  matsu: { label: '松', color: '#FFD600', bg: 'rgba(255,214,0,0.15)' },
+// 松竹梅 tier カラー定義
+const TIER: Record<ShojikubaiTier, { label: string; color: string }> = {
+  ume: { label: '梅', color: '#3DD68C' },
+  take: { label: '竹', color: '#FF8A4C' },
+  matsu: { label: '松', color: '#FFD600' },
 };
+const FIRE_COLOR = colors.fireFrom;
 
+// タスク1件の行
 function DoneRow({ task }: { task: Task }) {
   const { fs } = useLayout();
   const isFire = task.type === 'fire';
-  const badge = task.completedTier ? TIER_BADGE[task.completedTier] : null;
-  const hasLag = !isFire && task.timeToStartSeconds != null;
+  const tier = task.completedTier ? TIER[task.completedTier] : null;
+  const brakeApplied =
+    isFire &&
+    task.workedMinutes != null &&
+    task.timerMinutes != null &&
+    task.workedMinutes <= task.timerMinutes;
+
+  const minuteLabel =
+    task.workedMinutes != null
+      ? ` (${task.workedMinutes}分${brakeApplied ? '・過集中回避!' : ''})`
+      : '';
+
+  const labelColor = tier ? tier.color : isFire ? FIRE_COLOR : colors.textSecondary;
+  const labelText = tier ? tier.label : isFire ? '🔥' : '?';
 
   return (
     <View style={styles.row}>
-      <Text style={[styles.check, { fontSize: fs.body }]}>✅</Text>
-      <View style={styles.rowMain}>
-        <Text style={[styles.rowText, { fontSize: fs.body }]} numberOfLines={2}>
-          {task.text}
+      <View style={[styles.tierPill, { borderColor: labelColor }]}>
+        <Text style={[styles.tierPillTxt, { color: labelColor, fontSize: fs.caption }]}>
+          {labelText}
         </Text>
-        {hasLag && (
-          <Text style={[styles.rowSub, { fontSize: fs.caption }]}>
-            🚀 取り掛かりまで {formatLag(task.timeToStartSeconds!)}
-          </Text>
-        )}
       </View>
-      {isFire && task.workedMinutes != null && (
-        <View style={[styles.badge, { backgroundColor: 'rgba(255,90,110,0.18)' }]}>
-          <Text style={[styles.badgeTxt, { color: colors.fireFrom, fontSize: fs.caption }]}>
-            🔥 {task.workedMinutes}分
-          </Text>
-        </View>
-      )}
-      {/* 🔵 で 🚀 押下した場合の実測表示 */}
-      {!isFire && task.workedMinutes != null && (
-        <View style={[styles.badge, { backgroundColor: 'rgba(91,141,239,0.18)' }]}>
-          <Text style={[styles.badgeTxt, { color: colors.blue, fontSize: fs.caption }]}>
-            ⏱ {task.workedMinutes}分
-          </Text>
-        </View>
-      )}
-      {badge && (
-        <View style={[styles.badge, { backgroundColor: badge.bg }]}>
-          <Text style={[styles.badgeTxt, { color: badge.color, fontSize: fs.caption }]}>
-            {badge.label}
-          </Text>
-        </View>
-      )}
+      <Text style={[styles.rowText, { fontSize: fs.body }]} numberOfLines={2}>
+        {task.text}
+        <Text style={[styles.rowSub, { fontSize: fs.caption }]}>{minuteLabel}</Text>
+      </Text>
     </View>
   );
 }
 
-function formatLag(sec: number): string {
-  if (sec < 60) return `${sec}秒`;
-  const m = Math.floor(sec / 60);
-  if (m < 60) return `${m}分`;
-  return `${Math.floor(m / 60)}時間${m % 60}分`;
+// 達成状況を示すドット（最大5スロット）
+function TierDots({ tasks }: { tasks: Task[] }) {
+  const MAX = 5;
+  const filled = tasks.map((t) => {
+    if (t.completedTier) return TIER[t.completedTier].color;
+    if (t.type === 'fire') return FIRE_COLOR;
+    return colors.textSecondary;
+  });
+  const dots = [...filled, ...Array(Math.max(0, MAX - filled.length)).fill('rgba(255,255,255,0.12)')];
+
+  return (
+    <View style={styles.dots}>
+      {dots.map((bg, i) => (
+        <View key={i} style={[styles.dot, { backgroundColor: bg as string }]} />
+      ))}
+    </View>
+  );
 }
 
 export default function LogScreen() {
   const { doneTasks, loadDoneToday } = useTaskStore();
   const { fs, isDesktop } = useLayout();
 
-  // タブにフォーカスするたびに最新の完了タスクを再取得
   useFocusEffect(
     useCallback(() => {
       void loadDoneToday();
@@ -84,68 +86,120 @@ export default function LogScreen() {
   );
   const count = doneTasks.length;
 
-  const headline =
-    totalMinutes > 0 ? `今日 ${totalMinutes}分 動けた！` : `今日 ${count}個 動けた！`;
+  const praise = useMemo(() => {
+    const umeCount = doneTasks.filter((t) => t.completedTier === 'ume').length;
+    const takeCount = doneTasks.filter((t) => t.completedTier === 'take').length;
+    const matsuCount = doneTasks.filter((t) => t.completedTier === 'matsu').length;
+    const fireTasks = doneTasks.filter((t) => t.type === 'fire');
+    const fireCount = fireTasks.length;
+
+    const firstTask = doneTasks[0];
+    const matsuTask = doneTasks.find((t) => t.completedTier === 'matsu');
+    // 🔥 タスクの実作業分数（ブレーキが効いたもの優先）
+    const brakeTask = fireTasks.find(
+      (t) => t.workedMinutes != null && t.timerMinutes != null && t.workedMinutes <= t.timerMinutes
+    );
+    const fireMinutes = brakeTask?.workedMinutes ?? fireTasks[0]?.workedMinutes ?? undefined;
+
+    return buildPraiseComment({
+      count,
+      totalMinutes,
+      umeCount,
+      takeCount,
+      matsuCount,
+      fireCount,
+      firstTaskName: firstTask?.text,
+      fireMinutes: fireMinutes ?? undefined,
+      matsuTaskName: matsuTask?.text,
+    });
+  }, [doneTasks, count, totalMinutes]);
 
   const handleShare = () => {
     const lines = doneTasks.map((t) => {
-      const tier = t.completedTier ? TIER_BADGE[t.completedTier].label : '';
+      const tier = t.completedTier ? TIER[t.completedTier].label : t.type === 'fire' ? '🔥' : '';
       const min = t.workedMinutes != null ? `(${t.workedMinutes}分)` : '';
-      return `✅ ${t.text} ${tier}${min}`.trim();
+      return `✅ [${tier}] ${t.text} ${min}`.trim();
     });
     const msg = [
-      `📣 ${headline}`,
-      `クリアしたタスク ${count}個`,
+      `📣 ${praise.headline}`,
+      `合計 ${totalMinutes}分 / ${count}個クリア`,
       ...lines,
       '',
       '#タスクブレーキ で過集中にブレーキ',
     ].join('\n');
-    void shareText(msg);
+    void Share.share({ message: msg });
   };
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={[styles.container, isDesktop && styles.containerDesktop]}>
+        {/* ヘッダー */}
         <View style={styles.header}>
           <Text style={[styles.title, { fontSize: fs.title }]}>本日の褒めログ</Text>
-        </View>
-
-        {/* 大見出し */}
-        <View style={styles.hero}>
-          <Text style={[styles.heroText, { fontSize: fs.title * 1.5 }]}>{headline}</Text>
           {count > 0 && (
-            <Text style={[styles.heroSub, { fontSize: fs.small }]}>
-              {count}個のタスクをクリア
-              {totalMinutes > 0 ? ` ・ ${totalMinutes}分集中` : ''}
-            </Text>
+            <Pressable
+              onPress={handleShare}
+              hitSlop={12}
+              accessibilityRole="button"
+              accessibilityLabel="結果をシェア">
+              <Text style={[styles.shareIcon, { fontSize: fs.body }]}>＜</Text>
+            </Pressable>
           )}
         </View>
 
         {count === 0 ? (
+          /* 未クリア時 */
           <View style={styles.empty}>
             <Text style={[styles.emptyEmoji, { fontSize: fs.title * 2 }]}>🌱</Text>
-            <Text style={[styles.emptyTitle, { fontSize: fs.body }]}>まだ今日のクリアはありません</Text>
+            <Text style={[styles.emptyTitle, { fontSize: fs.body }]}>
+              まだ今日のクリアはありません
+            </Text>
             <Text style={[styles.emptyBody, { fontSize: fs.small }]}>
               「今日」タブで梅をひとつクリアするだけで、ここに記録されます。{'\n'}
               できなかったことは表示しません。できたことだけ祝います。
             </Text>
           </View>
         ) : (
-          <>
-            <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
+          <ScrollView
+            style={styles.scroll}
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={false}>
+            {/* ヒーローセクション */}
+            <View style={styles.hero}>
+              <Text style={[styles.heroHeadline, { fontSize: fs.small }]}>
+                {praise.headline}
+              </Text>
+              <View style={styles.heroMinutes}>
+                <Text style={[styles.heroMinutesLabel, { fontSize: fs.body }]}>合計</Text>
+                <Text style={[styles.heroMinutesNum, { fontSize: fs.title * 2.2 }]}>
+                  {' '}{totalMinutes}分
+                </Text>
+              </View>
+              <Text style={[styles.heroSubline, { fontSize: fs.small }]}>
+                {praise.subline}
+              </Text>
+            </View>
+
+            {/* ティアドット */}
+            <TierDots tasks={doneTasks} />
+
+            {/* クリアしたタスク一覧 */}
+            <Text style={[styles.sectionTitle, { fontSize: fs.small }]}>
+              本日クリアした偉業
+            </Text>
+            <View style={styles.taskList}>
               {doneTasks.map((task) => (
                 <DoneRow key={task.id} task={task} />
               ))}
-            </ScrollView>
+            </View>
 
-            <Pressable
-              onPress={handleShare}
-              style={({ pressed }) => [styles.shareBtn, { opacity: pressed ? 0.8 : 1 }]}
-              accessibilityRole="button"
-              accessibilityLabel="結果をシェア">
-              <Text style={[styles.shareTxt, { fontSize: fs.body }]}>📤 結果をシェア</Text>
-            </Pressable>
-          </>
+            {/* 褒めコメントカード */}
+            <View style={styles.commentCard}>
+              <Text style={[styles.commentText, { fontSize: fs.body }]}>
+                「{praise.comment}」
+              </Text>
+            </View>
+          </ScrollView>
         )}
       </View>
     </SafeAreaView>
@@ -161,6 +215,9 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
   },
   header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
   },
@@ -168,69 +225,112 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontWeight: '700',
   },
+  shareIcon: {
+    color: colors.textSecondary,
+    fontWeight: '600',
+    transform: [{ scaleX: -1 }],
+  },
+  // --- Hero ---
   hero: {
     alignItems: 'center',
-    paddingVertical: spacing.xl,
+    paddingTop: spacing.xl,
+    paddingBottom: spacing.md,
     paddingHorizontal: spacing.lg,
-    gap: spacing.sm,
+    gap: spacing.xs,
   },
-  heroText: {
-    color: colors.text,
-    fontWeight: '800',
-    textAlign: 'center',
-  },
-  heroSub: {
+  heroHeadline: {
     color: colors.textSecondary,
     textAlign: 'center',
   },
-  scroll: { flex: 1 },
-  scrollContent: {
+  heroMinutes: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 0,
+  },
+  heroMinutesLabel: {
+    color: colors.text,
+    fontWeight: '700',
+    paddingBottom: 6,
+  },
+  heroMinutesNum: {
+    color: colors.text,
+    fontWeight: '800',
+    letterSpacing: -1,
+  },
+  heroSubline: {
+    color: colors.textSecondary,
+    textAlign: 'center',
+  },
+  // --- Dots ---
+  dots: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    paddingVertical: spacing.md,
     paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.lg,
+  },
+  dot: {
+    width: 40,
+    height: 12,
+    borderRadius: radius.pill,
+  },
+  // --- Task list ---
+  sectionTitle: {
+    color: colors.textSecondary,
+    fontWeight: '600',
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.sm,
+    letterSpacing: 0.5,
+  },
+  taskList: {
+    paddingHorizontal: spacing.lg,
+    gap: spacing.sm,
   },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
-    marginBottom: spacing.sm,
   },
-  check: {},
-  rowMain: {
-    flex: 1,
-    gap: 2,
+  tierPill: {
+    borderWidth: 1.5,
+    borderRadius: radius.sm,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    minWidth: 30,
+    alignItems: 'center',
+  },
+  tierPillTxt: {
+    fontWeight: '700',
   },
   rowText: {
     color: colors.text,
+    flex: 1,
     fontWeight: '500',
   },
   rowSub: {
     color: colors.textSecondary,
   },
-  badge: {
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 2,
-    borderRadius: radius.pill,
-  },
-  badgeTxt: {
-    fontWeight: '700',
-  },
-  shareBtn: {
+  // --- Comment card ---
+  commentCard: {
     marginHorizontal: spacing.lg,
-    marginBottom: spacing.lg,
-    marginTop: spacing.sm,
-    paddingVertical: spacing.md,
-    borderRadius: radius.pill,
-    backgroundColor: colors.accentFrom,
-    alignItems: 'center',
+    marginTop: spacing.xl,
+    marginBottom: spacing.xl,
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    padding: spacing.lg,
   },
-  shareTxt: {
-    color: colors.textOnAccent,
-    fontWeight: '700',
+  commentText: {
+    color: colors.text,
+    lineHeight: 26,
+    textAlign: 'center',
   },
+  // --- Scroll ---
+  scroll: { flex: 1 },
+  scrollContent: {
+    paddingBottom: spacing.xxl,
+  },
+  // --- Empty state ---
   empty: {
     flex: 1,
     alignItems: 'center',
