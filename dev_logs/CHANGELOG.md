@@ -32,6 +32,28 @@
 - `src/features/today/TierSelectModal.tsx`（新規）: 完了時にどのtierを達成したか選ぶモーダル
 - `src/features/today/TodayTaskCard.tsx`: 松竹梅の見積もり入力行（松は必須）を追加。ShojikubaiButtonsを「完了 →」ボタン＋TierSelectModalに変更
 - `src/app/(tabs)/log.tsx`: DoneRowに見積もり分数表示を追加
+## 2026-06-01: UIテーマ統一・コントラスト改善・タブ名変更・タイマー表示強化
+**ブランチ:** claude/peaceful-brahmagupta-YlucS
+
+### 変更内容
+- `src/app/(tabs)/_layout.tsx`: タブ名を「吐き出し→タスク掃き出し」「今日→今日のタスク」に変更
+- `src/app/(tabs)/index.tsx`: SafeAreaView に `backgroundColor: colors.bgTop` を追加（ダークテーマ統一）
+- `src/app/(tabs)/log.tsx`: SafeAreaView に `backgroundColor: colors.bgTop` を追加（ダークテーマ統一）
+- `src/components/ui/Bubble.tsx`: 🔥バブルを明るいグラデーション背景からダーク背景+ボーダーに変更（コントラスト改善）
+- `src/features/today/BrakeTimer.tsx`: タイマー実行中に「経過時間 MM:SS」と「残り時間 MM:SS」を並列表示する UI を追加
+
+### 変更意図・背景
+- 「今日」タブのみダークテーマが適用されており、「タスク掃き出し」「ほめログ」タブが白背景になっていた
+- 🔥バブル（ChatList の火タスク分類カード）が明るいオレンジ/赤グラデーション背景に暗色テキストを重ねており、コントラスト比が不十分だった
+- 沼タスク実行中に経過時間が表示されず、どのくらい作業したか把握しにくかった
+
+### 技術的決定事項
+- 🔥バブルは `gradients.fire`（明るい赤オレンジグラデ）→ `rgba(255,90,110,0.12)` の半透明ダーク背景 + ボーダーに変更。テキストカラーは既存のダークテーマ向けカラーをそのまま維持できる
+- 経過時間は `useCountdown` が返す `remainingMs` から `totalMs - remainingMs` で導出。新規 state 不要
+- 経過/残りを左右2セルで表示し、区切り線で視覚的に分離
+
+### 残課題・次のステップ
+- ActiveSessionBanner（今日タブ上部バナー）にも経過時間を表示すると一貫性が高まる
 
 ## 2026-06-01: 細かい4点修正（松竹梅入力・中断機能・沼アラート確認・TODO表示変更）
 **ブランチ:** claude/sleepy-faraday-niOxM

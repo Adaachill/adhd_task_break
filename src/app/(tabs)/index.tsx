@@ -49,6 +49,7 @@ export default function InboxScreen() {
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
+    backgroundColor: colors.bgTop,
   },
   container: {
     flex: 1,

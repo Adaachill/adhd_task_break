@@ -214,7 +214,7 @@ export default function LogScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1 },
+  safe: { flex: 1, backgroundColor: colors.bgTop },
   container: { flex: 1 },
   containerDesktop: {
     maxWidth: 720,
