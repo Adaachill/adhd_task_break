@@ -4,7 +4,7 @@ import { insertTask, listDoneBetween, listInbox, listToday, updateTask } from '@
 import { estimateTask as aiEstimateTask } from '@/services/ai/deepseek';
 import type { AiHistoryEntry } from '@/services/ai/types';
 import { classify } from '@/services/classify';
-import type { ClassificationPatch, ShojikubaiTier, Task } from '@/types/task';
+import type { ClassificationPatch, ShojikubaiDef, ShojikubaiTier, Task } from '@/types/task';
 
 function genId(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
@@ -27,8 +27,12 @@ interface TaskState {
   // 画面2: 今日やる
   moveToToday: (id: string) => Promise<void>;
   moveToInbox: (id: string) => Promise<void>;
-  // 🔵 「🚀 始める」押下（取り掛かり時刻を記録）
+  // 🔵 「🚀 始める」押下（取り掛かり時刻を記録。再開時も同じアクション）
   startBlueTask: (id: string) => Promise<void>;
+  // 🔵 中断（時計を止める。再開は startBlueTask）
+  pauseBlueTask: (id: string) => Promise<void>;
+  // 🔵 松竹梅定義を更新
+  updateShojikubai: (id: string, def: ShojikubaiDef) => Promise<void>;
   // 🔵 松竹梅達成
   completeShojikubai: (id: string, tier: ShojikubaiTier) => Promise<void>;
   // 🔥 ブレーキタイマー
@@ -180,16 +184,19 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     await updateTask(updated);
   },
 
-  // 🔵 「🚀 始める」（取り掛かり時刻 + 取り掛かりラグを記録）
+  // 🔵 「🚀 始める / 再開」（取り掛かり時刻 + 取り掛かりラグを記録）
   startBlueTask: async (id: string) => {
     const task = get().todayTasks.find((t) => t.id === id);
-    if (!task || task.blueStartedAt !== null) return;
+    if (!task) return;
 
     const now = Date.now();
+    // 初回のみ取り掛かりラグを計算
     const lagSec =
-      task.movedToTodayAt !== null
-        ? Math.max(0, Math.round((now - task.movedToTodayAt) / 1000))
-        : null;
+      task.timeToStartSeconds !== null
+        ? task.timeToStartSeconds
+        : task.movedToTodayAt !== null
+          ? Math.max(0, Math.round((now - task.movedToTodayAt) / 1000))
+          : null;
 
     const updated: Task = {
       ...task,
@@ -197,6 +204,35 @@ export const useTaskStore = create<TaskState>((set, get) => ({
       timeToStartSeconds: lagSec,
       updatedAt: now,
     };
+    set((s) => ({
+      todayTasks: s.todayTasks.map((t) => (t.id === id ? updated : t)),
+    }));
+    await updateTask(updated);
+  },
+
+  // 🔵 中断（blueStartedAt をリセット。continued は false に）
+  pauseBlueTask: async (id: string) => {
+    const task = get().todayTasks.find((t) => t.id === id);
+    if (!task || task.blueStartedAt === null) return;
+
+    const updated: Task = {
+      ...task,
+      blueStartedAt: null,
+      continued: false,
+      updatedAt: Date.now(),
+    };
+    set((s) => ({
+      todayTasks: s.todayTasks.map((t) => (t.id === id ? updated : t)),
+    }));
+    await updateTask(updated);
+  },
+
+  // 🔵 松竹梅定義を更新
+  updateShojikubai: async (id: string, def: ShojikubaiDef) => {
+    const task = get().todayTasks.find((t) => t.id === id);
+    if (!task) return;
+
+    const updated: Task = { ...task, shojikubai: def, updatedAt: Date.now() };
     set((s) => ({
       todayTasks: s.todayTasks.map((t) => (t.id === id ? updated : t)),
     }));

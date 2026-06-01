@@ -4,13 +4,14 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useLayout } from '@/hooks/useLayout';
 import { useTaskStore } from '@/store/taskStore';
 import { colors, radius, spacing } from '@/theme/tokens';
-import type { ShojikubaiTier, Task } from '@/types/task';
+import type { ShojikubaiDef, ShojikubaiTier, Task } from '@/types/task';
 
 import { BrakeAlertModal } from './BrakeAlertModal';
 import { BrakeTimer } from './BrakeTimer';
 import { DoneOverlay } from './DoneOverlay';
 import { EstimateChip } from './EstimateChip';
 import { ShojikubaiButtons } from './ShojikubaiButtons';
+import { ShojikubaiEditor } from './ShojikubaiEditor';
 import { StartTaskButton } from './StartTaskButton';
 
 interface Props {
@@ -26,6 +27,7 @@ export function TodayTaskCard({ task, canMoveUp, canMoveDown, onMoveUp, onMoveDo
   const completeFireTask = useTaskStore((s) => s.completeFireTask);
   const startBrakeTimer = useTaskStore((s) => s.startBrakeTimer);
   const stopBrakeTimer = useTaskStore((s) => s.stopBrakeTimer);
+  const updateShojikubai = useTaskStore((s) => s.updateShojikubai);
   const moveToInbox = useTaskStore((s) => s.moveToInbox);
   const { fs } = useLayout();
 
@@ -67,6 +69,16 @@ export function TodayTaskCard({ task, canMoveUp, canMoveDown, onMoveUp, onMoveDo
     await completeFireTask(task.id, task.timerMinutes ?? 0);
   };
 
+  // 🔥 中断（タイマーをリセット。タスクは today に残る）
+  const handleFirePause = async () => {
+    await stopBrakeTimer(task.id);
+  };
+
+  // 🔵 松竹梅定義の保存
+  const handleSaveShojikubai = (def: ShojikubaiDef) => {
+    void updateShojikubai(task.id, def);
+  };
+
   const isFire = task.type === 'fire';
   const isBlue = task.type === 'blue';
   const borderColor = isFire ? colors.fireFrom : isBlue ? colors.blue : colors.border;
@@ -77,7 +89,7 @@ export function TodayTaskCard({ task, canMoveUp, canMoveDown, onMoveUp, onMoveDo
         {/* タスクテキスト */}
         <View style={styles.header}>
           <Text style={[styles.typeTag, { fontSize: fs.caption, color: isFire ? colors.fireFrom : colors.blue }]}>
-            {isFire ? '🔥 沼タスク' : isBlue ? '🔵 動けるタスク' : 'タスク'}
+            {isFire ? '🔥 沼タスク' : isBlue ? '🔵 TODO' : 'タスク'}
           </Text>
           {/* 並び替え + 今日から外す */}
           <View style={styles.headerActions}>
@@ -111,10 +123,11 @@ export function TodayTaskCard({ task, canMoveUp, canMoveDown, onMoveUp, onMoveDo
 
         <Text style={[styles.text, { fontSize: fs.body }]}>{task.text}</Text>
 
-        {/* 🔵: AI 見積もり + 🚀 始める + 松竹梅ボタン */}
+        {/* 🔵: AI 見積もり + 松竹梅定義入力 + 🚀 始める + 松竹梅ボタン */}
         {isBlue && (
           <>
             <EstimateChip task={task} />
+            <ShojikubaiEditor value={task.shojikubai} onSave={handleSaveShojikubai} />
             <StartTaskButton task={task} />
             <ShojikubaiButtons onSelect={handleSelectTier} />
           </>
@@ -122,7 +135,12 @@ export function TodayTaskCard({ task, canMoveUp, canMoveDown, onMoveUp, onMoveDo
 
         {/* 🔥: ブレーキタイマー */}
         {isFire && (
-          <BrakeTimer task={task} onTimeUp={handleTimeUp} onComplete={handleFireComplete} />
+          <BrakeTimer
+            task={task}
+            onTimeUp={handleTimeUp}
+            onComplete={handleFireComplete}
+            onPause={handleFirePause}
+          />
         )}
 
         {/* 属性なしタスク: 完了ボタン */}

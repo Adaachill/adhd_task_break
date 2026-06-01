@@ -1,5 +1,30 @@
 # 開発履歴
 
+## 2026-06-01: 細かい4点修正（松竹梅入力・中断機能・沼アラート確認・TODO表示変更）
+**ブランチ:** claude/sleepy-faraday-niOxM
+
+### 変更内容
+- `src/features/today/ShojikubaiEditor.tsx` (新規): 松竹梅（梅/竹/松）の行動内容を入力するフォームコンポーネント
+- `src/features/today/TodayTaskCard.tsx`: ShojikubaiEditor を🔵タスクカードに追加。「動けるタスク」→「TODO」に表示変更
+- `src/features/today/StartTaskButton.tsx`: 作業中に「⏸ 中断」ボタンを追加。中断後は「🚀 再開」ボタンを表示
+- `src/features/today/BrakeTimer.tsx`: 🔥タスクのタイマー実行中に「⏸ 中断」ボタンを追加（完了ではなく一時停止）
+- `src/store/taskStore.ts`: `pauseBlueTask`・`updateShojikubai` アクション追加、`startBlueTask` を再開可能に修正
+- `src/features/inbox/TaskBubble.tsx`: TYPE_OPTIONS の「🔵 動ける」→「🔵 TODO」に変更
+
+### 変更意図・背景
+- 松竹梅の内容（「梅=最低限」「竹=普通」「松=理想」）をユーザーが記入できるようにした
+- タスクを途中で中断できる機能がなく、再開できなかったので追加
+- 沼タスクのアラートは既に実装済み（BrakeAlertModal が isExpired 時に表示される）を確認
+- 「動ける」という表現が分かりにくいため「TODO」に変更
+
+### 技術的決定事項
+- `pauseBlueTask` は blueStartedAt を null にリセット。再開時は startBlueTask を再利用（重複防止ガードを除去）
+- ShojikubaiEditor はブラー時に保存。未入力でも松竹梅ボタンは使える（既存動作維持）
+- 🔥中断は既存の stopBrakeTimer を呼び出すだけで実装できた
+
+### 残課題・次のステップ
+- 松竹梅の内容を入力した場合、完了時に各レベルの内容をオーバーレイに表示するとより便利
+
 ## 2026-06-01: 褒めログ UI 再設計 — ルールベース褒めコメント実装
 **ブランチ:** claude/amazing-brahmagupta-ov0FY
 

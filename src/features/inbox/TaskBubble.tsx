@@ -17,7 +17,7 @@ const DUE_LABEL: Record<DueLabel, string> = {
 
 const TYPE_OPTIONS: (BadgeOption & { value: TaskType | null })[] = [
   { label: '＋ 属性なし', tone: 'muted', value: null },
-  { label: '🔵 動ける', tone: 'blue', value: 'blue' },
+  { label: '🔵 TODO', tone: 'blue', value: 'blue' },
   { label: '🔥 沼', tone: 'fire', value: 'fire' },
 ];
 
@@ -67,7 +67,7 @@ export function TaskBubble({ task }: { task: Task }) {
     task.type === 'fire'
       ? { label: '🔥 沼', tone: 'fire' as const }
       : task.type === 'blue'
-        ? { label: '🔵 動ける', tone: 'blue' as const }
+        ? { label: '🔵 TODO', tone: 'blue' as const }
         : { label: '＋ 属性', tone: 'muted' as const };
 
   const dueBadge = task.due
