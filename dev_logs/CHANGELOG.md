@@ -1,5 +1,32 @@
 # 開発履歴
 
+## 2026-06-01: 松竹梅の並び順を全画面で梅→竹→松に統一
+**ブランチ:** claude/fix-tier-order-v2-9R3sM
+
+### 変更内容
+- `src/features/today/TierSelectModal.tsx`: `TIER_OPTIONS` の並びを 松→竹→梅 から 梅→竹→松 に変更
+- `src/features/today/ShojikubaiEditor.tsx`: `FIELDS` の並びを 松→竹→梅 から 梅→竹→松 に変更（前回 PR の方向を反転）
+- `src/features/today/TodayTaskCard.tsx`: `TierEstimateRow` の入力欄を 松→竹→梅 から 梅→竹→松 に並び替え
+
+### 精査結果（その他の松竹梅順序を扱う箇所）
+- `src/features/today/ShojikubaiButtons.tsx`: 既に 梅→竹→松 順 ✅ 修正不要
+- `src/app/(tabs)/log.tsx` の `TIER` カラー辞書: 順序を持たないオブジェクト ✅ 修正不要
+- `src/services/praiseComment.ts`: 件数集計のみで順序を表示しない ✅ 修正不要
+- `src/services/ai/types.ts` / `api/ai.ts`: 型定義のユニオン順だけで表示に影響しない ✅ 修正不要
+
+### 変更意図・背景
+完了時のスクショで、ユーザーが「松（理想）が一番下に来てほしい」「内容と見積もり時間が梅→竹→松の順に並んでいる方が自然」とフィードバック。
+画面の上から下へ＝低い基準から高い基準へ積み上がる方が、ADHD ユーザーの「梅でもまず手を付ければOK」というメンタルモデルに合う。
+`ShojikubaiButtons`（既に 梅→竹→松 順）と統一が取れた。
+
+### 技術的決定事項
+- DB のキー（`shojikubai.ume` / `take` / `matsu`）は変更なし。表示順序だけを反転。
+- ロジックの並び順（型定義の `'ume' | 'take' | 'matsu'`）はすでに 梅→竹→松 順だったので、視覚側を合わせる方向で統一。
+
+### 残課題・次のステップ
+- 既存ユーザーが過去に入力した shojikubai のキーずれは自動修正できない（自由テキストのため）。
+  該当ユーザーには再入力で対応してもらう。
+
 ## 2026-06-01: 松竹梅エディタの並び順を完了モーダルと揃える
 **ブランチ:** claude/fix-tier-order-7K2pQ
 

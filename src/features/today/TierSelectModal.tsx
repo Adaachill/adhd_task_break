@@ -17,13 +17,13 @@ interface TierOption {
 
 const TIER_OPTIONS: TierOption[] = [
   {
-    tier: 'matsu',
-    emoji: '🏆',
-    label: '松',
-    sublabel: 'ベストを尽くす',
-    color: '#FFD600',
-    bg: 'rgba(255,214,0,0.08)',
-    selectedBg: 'rgba(255,214,0,0.2)',
+    tier: 'ume',
+    emoji: '🎉',
+    label: '梅',
+    sublabel: '最低限だけ',
+    color: colors.blue,
+    bg: 'rgba(91,141,239,0.08)',
+    selectedBg: 'rgba(91,141,239,0.2)',
   },
   {
     tier: 'take',
@@ -35,13 +35,13 @@ const TIER_OPTIONS: TierOption[] = [
     selectedBg: 'rgba(139,92,246,0.2)',
   },
   {
-    tier: 'ume',
-    emoji: '🎉',
-    label: '梅',
-    sublabel: '最低限だけ',
-    color: colors.blue,
-    bg: 'rgba(91,141,239,0.08)',
-    selectedBg: 'rgba(91,141,239,0.2)',
+    tier: 'matsu',
+    emoji: '🏆',
+    label: '松',
+    sublabel: 'ベストを尽くす',
+    color: '#FFD600',
+    bg: 'rgba(255,214,0,0.08)',
+    selectedBg: 'rgba(255,214,0,0.2)',
   },
 ];
 
