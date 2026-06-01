@@ -30,7 +30,13 @@ export function BrakeTimer({ task, onTimeUp, onComplete, onPause }: Props) {
   const { fs } = useLayout();
 
   const isRunning = task.timerStartedAt !== null;
-  const { isExpired, formatted } = useCountdown(task.timerStartedAt, task.timerMinutes);
+  const { isExpired, formatted, remainingMs } = useCountdown(task.timerStartedAt, task.timerMinutes);
+
+  const totalMs = (task.timerMinutes ?? 0) * 60_000;
+  const elapsedMs = Math.max(0, totalMs - remainingMs);
+  const elapsedMin = Math.floor(elapsedMs / 60_000);
+  const elapsedSec = Math.floor((elapsedMs % 60_000) / 1000);
+  const elapsedFormatted = `${String(elapsedMin).padStart(2, '0')}:${String(elapsedSec).padStart(2, '0')}`;
 
   // タイムアップ検知
   useEffect(() => {
@@ -71,9 +77,26 @@ export function BrakeTimer({ task, onTimeUp, onComplete, onPause }: Props) {
         <Text style={[styles.countdown, { fontSize: fs.title * 1.8, color: isExpired ? colors.fireFrom : colors.text }]}>
           {isExpired ? 'TIME UP' : formatted}
         </Text>
-        <Text style={[styles.label, { fontSize: fs.caption }]}>
-          {isExpired ? '時間になりました！' : `残り時間（${task.timerMinutes}分設定）`}
-        </Text>
+        {!isExpired && (
+          <View style={styles.timeRow}>
+            <View style={styles.timeCell}>
+              <Text style={[styles.timeCellValue, { fontSize: fs.body, color: colors.fireFrom }]}>
+                {elapsedFormatted}
+              </Text>
+              <Text style={[styles.timeCellLabel, { fontSize: fs.caption }]}>経過</Text>
+            </View>
+            <View style={styles.timeDivider} />
+            <View style={styles.timeCell}>
+              <Text style={[styles.timeCellValue, { fontSize: fs.body, color: colors.text }]}>
+                {formatted}
+              </Text>
+              <Text style={[styles.timeCellLabel, { fontSize: fs.caption }]}>残り（{task.timerMinutes}分設定）</Text>
+            </View>
+          </View>
+        )}
+        {isExpired && (
+          <Text style={[styles.label, { fontSize: fs.caption }]}>時間になりました！</Text>
+        )}
         {!isExpired && (
           <View style={styles.actionRow}>
             <Pressable onPress={handleStop} style={styles.stopBtn}>
@@ -141,6 +164,28 @@ const styles = StyleSheet.create({
   durationText: {
     color: colors.fireFrom,
     fontWeight: '600',
+  },
+  timeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    marginTop: spacing.xs,
+  },
+  timeCell: {
+    alignItems: 'center',
+    gap: 2,
+  },
+  timeCellValue: {
+    fontWeight: '700',
+    fontVariant: ['tabular-nums'],
+  },
+  timeCellLabel: {
+    color: colors.textSecondary,
+  },
+  timeDivider: {
+    width: 1,
+    height: 28,
+    backgroundColor: colors.border,
   },
   actionRow: {
     flexDirection: 'row',
