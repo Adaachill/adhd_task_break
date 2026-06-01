@@ -1,5 +1,28 @@
 # 開発履歴
 
+## 2026-06-01: 今日のタスクタブで編集可能に（タイトル・タイプ・期限・習慣・見積もり）
+**ブランチ:** claude/charming-goldberg-vT0zT
+
+### 変更内容
+- `src/store/taskStore.ts`: `updateTodayTask` アクションを追加。`text` / `type` / `due` / `isHabit` / `estimatedMinutes` / `estimateSource` / `timerMinutes` の部分更新を today タスクに対して行う
+- `src/features/today/TodayTaskCard.tsx`:
+  - タイトル行をタップで `TextInput` に切り替えて編集できるよう変更
+  - 既存の固定タイプタグの代わりに `BadgeSelector` を使い、🔵/🔥 のタイプ、期限ラベル（今日/明日/いつか）、単発/習慣 を編集できるよう変更
+  - 見積もり分数（`estimatedMinutes`）を編集する入力行を追加（インボックスタブと同じ操作感）。🔥 タイマー実行中は誤操作防止のため編集不可
+
+### 変更意図・背景
+従来、今日のタスクタブではタスク名・タイプ・期限・習慣・見積もりを編集する手段がなく、修正したい場合は一度インボックスに戻す必要があった。
+ユーザーが今日のタスクタブ内で完結して編集できるようにすることで、再分類のためにインボックスに往復する手間をなくす。
+
+### 技術的決定事項
+- 既存の `BadgeSelector` をそのまま再利用（インボックスタブと UI 統一）
+- 編集アクションは既存の `updateClassification`（inbox 向け）と分離して `updateTodayTask` を新設。inbox / today で対象配列が違うため処理を分けたほうが副作用が読みやすい
+- タイトルは「タップで編集モード → blur で保存」方式（モーダルや別画面を作らずに済む）
+
+### 残課題・次のステップ
+- 🔥 沼タスクの `timerMinutes` はタイマー開始時に決定する仕様のままで、編集 UI からは触らない
+- タイプ切り替え時に `shojikubai` / `shojikubaiEstimates` をリセットすべきかの仕様確認
+
 ## 2026-06-01: コンフリクト解消・バグ修正（中断時間積算・TierSelectModal改善）
 **ブランチ:** claude/vigilant-albattani-nWlW1
 
