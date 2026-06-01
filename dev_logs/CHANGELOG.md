@@ -1,5 +1,31 @@
 # 開発履歴
 
+## 2026-06-01: 掃き出しUI細修正3点（Enter送信・分類引き継ぎ・時間見積もり入力）
+**ブランチ:** claude/vigilant-babbage-Phtdh
+
+### 変更内容
+- `src/features/inbox/InputBar.tsx`: PC（isDesktop）では `multiline={false}` にし、Enterキーで送信できるように変更（LINEのPC UIと同様の動作）
+- `src/store/taskStore.ts`:
+  - `addTask` で直前タスクの分類（type/due/isHabit）を引き継ぐように変更。当日以前のタスクしかない・タスクが空の場合はデフォルト（動ける/今日/単発）を使用
+  - `updateClassification` で type/due/isHabit 以外の変更（見積もりなど）をしたとき `classifySource` を不必要に 'manual' に上書きしないよう修正
+- `src/types/task.ts`: `ClassificationPatch` に `estimatedMinutes` と `estimateSource` を追加
+- `src/features/inbox/TaskBubble.tsx`: 各タスクの分類カードに⏱ 見積もり（分）入力欄を追加。入力確定時（blur/Enterキー）にDBへ保存
+
+### 変更意図・背景
+- PCで使うときEnterで送信できないのが不便だった（改行が入ってしまう）
+- タスクを大量吐き出しするとき、毎回同じ分類を手動設定し直すのが手間だった。前回分類を引き継ぐことで摩擦を減らす
+- 掃き出し段階で時間の見積もりも入れておきたいというニーズに対応
+
+### 技術的決定事項
+- Enter送信はPC（isDesktop=true）のみ有効。モバイルは引き続き multiline で改行可能
+- 分類引き継ぎは「当日のタスク」の最後のもの（`.at(-1)`）から取得。日またぎは引き継がず、デフォルトに戻す
+- AIが分類した場合（result.type/result.due が非null）はAI結果を優先し、フォールバックは使わない
+- 見積もり入力はフリーテキスト（数値）でblur/Enterで確定。バリデーション：正の整数のみ保存、空欄でクリア
+
+### 残課題・次のステップ
+- モバイルでもShift+Enterで改行する実装（現状はmultilineのままなのでモバイルは問題なし）
+- 見積もりのプリセットボタン（5分/15分/30分/60分）があると入力が楽かもしれない
+
 ## 2026-05-23: 今日タブ UI 改善 — タスク候補表示・並び替え・タイトル視認性向上
 **ブランチ:** claude/task-list-ui-sorting-Ol57z
 

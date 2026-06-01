@@ -67,5 +67,5 @@ export interface ShojikubaiDef {
 
 // 分類で更新しうるフィールドのパッチ
 export type ClassificationPatch = Partial<
-  Pick<Task, 'type' | 'due' | 'isHabit' | 'classifySource'>
+  Pick<Task, 'type' | 'due' | 'isHabit' | 'classifySource' | 'estimatedMinutes' | 'estimateSource'>
 >;
