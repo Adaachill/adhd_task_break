@@ -11,9 +11,9 @@ interface Props {
 }
 
 const FIELDS: { key: keyof ShojikubaiDef; label: string; placeholder: string }[] = [
-  { key: 'ume', label: '梅', placeholder: '1秒でできる最低限' },
-  { key: 'take', label: '竹', placeholder: 'いつも通りの基準' },
   { key: 'matsu', label: '松', placeholder: '目指さなくてOKな理想' },
+  { key: 'take', label: '竹', placeholder: 'いつも通りの基準' },
+  { key: 'ume', label: '梅', placeholder: '1秒でできる最低限' },
 ];
 
 export function ShojikubaiEditor({ value, onSave }: Props) {
