@@ -98,21 +98,37 @@ function DoneRow({
 interface EditModalProps {
   task: Task | null;
   onClose: () => void;
-  onSave: (id: string, text: string) => void;
+  onSave: (id: string, patch: { text?: string; workedMinutes?: number }) => void;
 }
 
 function EditModal({ task, onClose, onSave }: EditModalProps) {
   const { fs } = useLayout();
   const [text, setText] = useState(task?.text ?? '');
+  const [minutesStr, setMinutesStr] = useState(
+    task?.workedMinutes != null ? String(task.workedMinutes) : ''
+  );
   useEffect(() => {
     setText(task?.text ?? '');
+    setMinutesStr(task?.workedMinutes != null ? String(task.workedMinutes) : '');
   }, [task]);
 
   if (!task) return null;
 
   const save = () => {
-    const next = text.trim();
-    if (next && next !== task.text) onSave(task.id, next);
+    const patch: { text?: string; workedMinutes?: number } = {};
+    const nextText = text.trim();
+    if (nextText && nextText !== task.text) patch.text = nextText;
+
+    const trimmed = minutesStr.trim();
+    if (trimmed !== '') {
+      const parsed = Number(trimmed);
+      if (Number.isFinite(parsed) && parsed >= 0) {
+        const nextMinutes = Math.floor(parsed);
+        if (nextMinutes !== task.workedMinutes) patch.workedMinutes = nextMinutes;
+      }
+    }
+
+    if (Object.keys(patch).length > 0) onSave(task.id, patch);
     onClose();
   };
 
@@ -128,6 +144,16 @@ function EditModal({ task, onClose, onSave }: EditModalProps) {
             multiline
             autoFocus
             placeholder="タスク名"
+            placeholderTextColor={colors.textSecondary}
+          />
+          <Text style={[editStyles.label, { fontSize: fs.small }]}>計測時間（分）</Text>
+          <TextInput
+            style={[editStyles.input, editStyles.minutesInput, { fontSize: fs.body }]}
+            value={minutesStr}
+            onChangeText={(v) => setMinutesStr(v.replace(/[^0-9]/g, ''))}
+            keyboardType="number-pad"
+            inputMode="numeric"
+            placeholder="例: 25"
             placeholderTextColor={colors.textSecondary}
           />
           <View style={editStyles.buttons}>
@@ -173,6 +199,13 @@ const editStyles = StyleSheet.create({
     padding: spacing.md,
     minHeight: 60,
     textAlignVertical: 'top',
+  },
+  label: {
+    color: colors.textSecondary,
+    fontWeight: '600',
+  },
+  minutesInput: {
+    minHeight: 0,
   },
   buttons: {
     flexDirection: 'row',
@@ -240,8 +273,8 @@ export default function LogScreen() {
   );
 
   const handleEditSave = useCallback(
-    (id: string, text: string) => {
-      void updateDoneTask(id, { text });
+    (id: string, patch: { text?: string; workedMinutes?: number }) => {
+      void updateDoneTask(id, patch);
     },
     [updateDoneTask]
   );

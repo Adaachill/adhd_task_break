@@ -46,7 +46,7 @@ interface TaskState {
   // doneTasks に対する編集（ほめログ画面用）
   updateDoneTask: (
     id: string,
-    patch: Partial<Pick<Task, 'text' | 'type' | 'due' | 'isHabit' | 'estimatedMinutes' | 'estimateSource' | 'timerMinutes' | 'timerGoal'>>
+    patch: Partial<Pick<Task, 'text' | 'type' | 'due' | 'isHabit' | 'estimatedMinutes' | 'estimateSource' | 'timerMinutes' | 'timerGoal' | 'workedMinutes'>>
   ) => Promise<void>;
   // 🔵 松竹梅の見積もり分数を更新
   updateShojikubaiEstimates: (id: string, estimates: ShojikubaiEstimates) => Promise<void>;
