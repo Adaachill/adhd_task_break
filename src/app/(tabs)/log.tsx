@@ -3,11 +3,14 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, Modal, Platform, Pressable, ScrollView, Share, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { TimelineView } from '@/features/praiseLog/TimelineView';
 import { useLayout } from '@/hooks/useLayout';
 import { buildPraiseComment } from '@/services/praiseComment';
 import { useTaskStore } from '@/store/taskStore';
 import { colors, radius, spacing } from '@/theme/tokens';
 import type { ShojikubaiTier, Task } from '@/types/task';
+
+type ViewMode = 'praise' | 'timeline';
 
 // 松竹梅 tier カラー定義
 const TIER: Record<ShojikubaiTier, { label: string; color: string }> = {
@@ -261,6 +264,7 @@ export default function LogScreen() {
   const updateDoneTask = useTaskStore((s) => s.updateDoneTask);
   const { fs, isDesktop } = useLayout();
   const [editingTask, setEditingTask] = useState<Task | null>(null);
+  const [mode, setMode] = useState<ViewMode>('praise');
 
   const handleReopen = useCallback(
     async (task: Task) => {
@@ -341,7 +345,7 @@ export default function LogScreen() {
         {/* ヘッダー */}
         <View style={styles.header}>
           <Text style={[styles.title, { fontSize: fs.title }]}>本日の褒めログ</Text>
-          {count > 0 && (
+          {count > 0 && mode === 'praise' && (
             <Pressable
               onPress={handleShare}
               hitSlop={12}
@@ -352,7 +356,30 @@ export default function LogScreen() {
           )}
         </View>
 
-        {count === 0 ? (
+        {/* 表示切替タブ */}
+        <View style={styles.tabRow}>
+          {(['praise', 'timeline'] as ViewMode[]).map((m) => (
+            <Pressable
+              key={m}
+              onPress={() => setMode(m)}
+              style={[styles.tabBtn, mode === m && styles.tabActive]}
+              accessibilityRole="button"
+              accessibilityLabel={m === 'praise' ? '褒めログを表示' : 'タイムラインを表示'}>
+              <Text
+                style={[
+                  styles.tabTxt,
+                  { fontSize: fs.small },
+                  mode === m ? styles.tabTxtActive : styles.tabTxtInactive,
+                ]}>
+                {m === 'praise' ? '✨ 褒め' : '🕒 タイムライン'}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+
+        {mode === 'timeline' ? (
+          <TimelineView tasks={doneTasks} />
+        ) : count === 0 ? (
           /* 未クリア時 */
           <View style={styles.empty}>
             <Text style={[styles.emptyEmoji, { fontSize: fs.title * 2 }]}>🌱</Text>
@@ -448,6 +475,27 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     transform: [{ scaleX: -1 }],
   },
+  tabRow: {
+    flexDirection: 'row',
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.sm,
+    backgroundColor: colors.surface,
+    borderRadius: radius.pill,
+    padding: 3,
+    gap: 2,
+  },
+  tabBtn: {
+    flex: 1,
+    paddingVertical: spacing.sm,
+    alignItems: 'center',
+    borderRadius: radius.pill,
+  },
+  tabActive: {
+    backgroundColor: colors.surfaceAlt,
+  },
+  tabTxt: { fontWeight: '600' },
+  tabTxtActive: { color: colors.text },
+  tabTxtInactive: { color: colors.textSecondary },
   // --- Hero ---
   hero: {
     alignItems: 'center',
