@@ -87,20 +87,20 @@ function TierEstimateRow({ estimates, onChange }: TierEstimateRowProps) {
       <Text style={[tierStyles.rowLabel, { fontSize: fs.caption }]}>⏱ 松竹梅の見積もり</Text>
       <View style={tierStyles.inputs}>
         <View style={tierStyles.inputGroup}>
-          <Text style={[tierStyles.tierLabel, { color: MATSU_COLOR, fontSize: fs.caption }]}>
-            松＊
+          <Text style={[tierStyles.tierLabel, { color: UME_COLOR, fontSize: fs.caption }]}>
+            梅
           </Text>
           <TextInput
-            style={[tierStyles.input, tierStyles.inputRequired, { fontSize: fs.caption }]}
-            value={matsuText}
-            onChangeText={setMatsuText}
+            style={[tierStyles.input, { fontSize: fs.caption }]}
+            value={umeText}
+            onChangeText={setUmeText}
             onBlur={() => commit(matsuText, takeText, umeText)}
             onSubmitEditing={() => commit(matsuText, takeText, umeText)}
             placeholder="分"
             placeholderTextColor={colors.textSecondary}
             keyboardType="numeric"
             returnKeyType="done"
-            accessibilityLabel="松の見積もり（必須）"
+            accessibilityLabel="梅の見積もり（任意）"
           />
         </View>
         <View style={tierStyles.inputGroup}>
@@ -121,20 +121,20 @@ function TierEstimateRow({ estimates, onChange }: TierEstimateRowProps) {
           />
         </View>
         <View style={tierStyles.inputGroup}>
-          <Text style={[tierStyles.tierLabel, { color: UME_COLOR, fontSize: fs.caption }]}>
-            梅
+          <Text style={[tierStyles.tierLabel, { color: MATSU_COLOR, fontSize: fs.caption }]}>
+            松＊
           </Text>
           <TextInput
-            style={[tierStyles.input, { fontSize: fs.caption }]}
-            value={umeText}
-            onChangeText={setUmeText}
+            style={[tierStyles.input, tierStyles.inputRequired, { fontSize: fs.caption }]}
+            value={matsuText}
+            onChangeText={setMatsuText}
             onBlur={() => commit(matsuText, takeText, umeText)}
             onSubmitEditing={() => commit(matsuText, takeText, umeText)}
             placeholder="分"
             placeholderTextColor={colors.textSecondary}
             keyboardType="numeric"
             returnKeyType="done"
-            accessibilityLabel="梅の見積もり（任意）"
+            accessibilityLabel="松の見積もり（必須）"
           />
         </View>
       </View>
