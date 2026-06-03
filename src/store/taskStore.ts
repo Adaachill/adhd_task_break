@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 
 import { insertTask, listDoneBetween, listInbox, listToday, updateTask } from '@/db/taskRepo';
+import { closeOpenSession, openSession, sumTaskMinutes } from '@/db/sessionRepo';
 import { estimateTask as aiEstimateTask } from '@/services/ai/deepseek';
 import type { AiHistoryEntry } from '@/services/ai/types';
 import { classify } from '@/services/classify';
@@ -226,21 +227,22 @@ export const useTaskStore = create<TaskState>((set, get) => ({
       todayTasks: s.todayTasks.map((t) => (t.id === id ? updated : t)),
     }));
     await updateTask(updated);
+    await openSession(id, 'blue', now);
   },
 
-  // 🔵 中断（blueStartedAt をリセット。経過分数を workedMinutes に積算する）
+  // 🔵 中断（blueStartedAt をリセット。セッションを閉じて累計を再計算）
   pauseBlueTask: async (id: string) => {
     const task = get().todayTasks.find((t) => t.id === id);
     if (!task || task.blueStartedAt === null) return;
 
     const now = Date.now();
-    const elapsed = Math.max(0, Math.round((now - task.blueStartedAt) / 60_000));
-    const accumulated = (task.workedMinutes ?? 0) + elapsed;
+    await closeOpenSession(id, now);
+    const accumulated = await sumTaskMinutes(id);
 
     const updated: Task = {
       ...task,
       blueStartedAt: null,
-      workedMinutes: accumulated,
+      workedMinutes: accumulated > 0 ? accumulated : task.workedMinutes,
       continued: false,
       updatedAt: now,
     };
@@ -268,15 +270,12 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     if (!task) return;
 
     const now = Date.now();
-    // 現セグメントの経過分数 + 中断時に積算済みの分数を合算（最低1分）
-    const currentSegment =
-      task.blueStartedAt !== null
-        ? Math.max(0, Math.round((now - task.blueStartedAt) / 60_000))
-        : 0;
-    const accumulated = task.workedMinutes ?? 0;
-    const totalWorked = currentSegment + accumulated > 0
-      ? Math.max(1, currentSegment + accumulated)
-      : null;
+    // 走行中セッションがあれば閉じてから累計を再計算
+    if (task.blueStartedAt !== null) {
+      await closeOpenSession(id, now);
+    }
+    const summed = await sumTaskMinutes(id);
+    const totalWorked = summed > 0 ? summed : task.workedMinutes;
 
     const updated: Task = {
       ...task,
@@ -303,13 +302,13 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     const task = get().todayTasks.find((t) => t.id === id);
     if (!task) return;
 
+    const now = Date.now();
     const updated: Task = {
       ...task,
       timerMinutes: minutes,
-      timerStartedAt: Date.now(),
+      timerStartedAt: now,
       timerGoal: goal,
-      // notificationId を shojikubai フィールドには入れず、将来の拡張カラムを想定
-      updatedAt: Date.now(),
+      updatedAt: now,
     };
 
     // notificationId はメモリのみ保持（キャンセル用）
@@ -321,18 +320,17 @@ export const useTaskStore = create<TaskState>((set, get) => ({
       todayTasks: s.todayTasks.map((t) => (t.id === id ? updated : t)),
     }));
     await updateTask(updated);
+    await openSession(id, 'fire', now);
   },
 
-  // 🔥 タイマー停止（中断扱い。経過時間を workedMinutes に積算し、タスクは today に残る）
+  // 🔥 タイマー停止（中断扱い。セッションを閉じて累計を再計算）
   stopBrakeTimer: async (id: string) => {
     const task = get().todayTasks.find((t) => t.id === id);
     if (!task) return;
 
     const now = Date.now();
-    const elapsed = task.timerStartedAt != null
-      ? Math.max(0, Math.round((now - task.timerStartedAt) / 60_000))
-      : 0;
-    const accumulated = (task.workedMinutes ?? 0) + elapsed;
+    await closeOpenSession(id, now);
+    const accumulated = await sumTaskMinutes(id);
 
     const updated: Task = {
       ...task,
@@ -379,17 +377,24 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     await updateTask(updated);
   },
 
-  // 🔥 タスク完了 → done（実測分数を記録）
+  // 🔥 タスク完了 → done（セッション合算で実測分数を確定）
   completeFireTask: async (id: string, workedMinutes: number) => {
     const task = get().todayTasks.find((t) => t.id === id);
     if (!task) return;
 
     const now = Date.now();
+    // 走行中セッションがあれば閉じてから累計を再計算（中断・再開を含む全期間が正しく合算される）
+    if (task.timerStartedAt !== null) {
+      await closeOpenSession(id, now);
+    }
+    const summed = await sumTaskMinutes(id);
+    const finalWorked = summed > 0 ? summed : workedMinutes;
+
     const updated: Task = {
       ...task,
       status: 'done',
       timerStartedAt: null,
-      workedMinutes,
+      workedMinutes: finalWorked,
       completedAt: now,
       updatedAt: now,
     };

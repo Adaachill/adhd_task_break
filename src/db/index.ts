@@ -67,4 +67,20 @@ async function migrate(db: SQLite.SQLiteDatabase): Promise<void> {
       // カラムがすでに存在する場合はスキップ
     }
   }
+
+  // 作業セッション（中断あり対応）。1タスクが複数行を持ちうる。
+  // started_at は記録時に必ず入り、ended_at は中断/完了時に埋まる（実行中は NULL）。
+  await db.execAsync(`
+    CREATE TABLE IF NOT EXISTS work_sessions (
+      id TEXT PRIMARY KEY NOT NULL,
+      task_id TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      started_at INTEGER NOT NULL,
+      ended_at INTEGER,
+      created_at INTEGER NOT NULL,
+      FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_work_sessions_task ON work_sessions(task_id);
+    CREATE INDEX IF NOT EXISTS idx_work_sessions_started ON work_sessions(started_at);
+  `);
 }

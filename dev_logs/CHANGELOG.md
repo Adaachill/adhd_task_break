@@ -1,5 +1,27 @@
 # 開発履歴
 
+## 2026-06-03: 作業セッションテーブル導入で中断あり時間計測を正確に
+**ブランチ:** claude/work-sessions-tracking
+
+### 変更内容
+- `src/db/index.ts`: `work_sessions` テーブル（id, task_id, kind, started_at, ended_at, created_at）と関連インデックスを追加するマイグレーションを追加。
+- `src/db/sessionRepo.ts`: 新規。`openSession` / `closeOpenSession` / `sumTaskMinutes` / `listSessions` を提供。
+- `src/store/taskStore.ts`: `startBlueTask` / `startBrakeTimer` でセッションを open、`pauseBlueTask` / `stopBrakeTimer` / `completeShojikubai` / `completeFireTask` でセッションを close し `sumTaskMinutes()` で `workedMinutes` を再計算するよう変更。
+- `src/features/today/BrakeTimer.tsx`: `handleStop` / `handlePause` が中断・再開を含む全期間の累計分数を渡すよう修正（`totalWorkedMinutes()` 追加）。
+
+### 変更意図・背景
+従来の実装では🔥タスクの「終わった！」押下時に `elapsedMinutes(timerStartedAt)` のみを完了分数として渡しており、中断・再開を経た場合に直近セグメント分しか記録されず、実作業時間と乖離していた。中断パターンを正しく扱えるよう、各セッション（開始〜終了）を別レコードで保持する設計に切り替えた。
+
+### 技術的決定事項
+- DBスキーマ案2つ（A: 新テーブル `work_sessions` / B: `tasks.work_intervals` JSON カラム）を検討し、Aを採用。理由：将来「セッション別の編集／表示」「日次集計の高速化」「タイムラインビューの精度向上」など拡張が見込まれ、関係テーブル化した方がクエリしやすいため。
+- `workedMinutes` カラムは互換のため残置し、セッション合算のキャッシュ的役割に降格。表示・統計はまずこの値を参照する既存コードを変えずに動くようにした。
+- `openSession()` 内で多重 open を防ぐため既存 open セッションを強制 close する（安全策）。
+
+### 残課題・次のステップ
+- 既存タスクの `workedMinutes` から擬似セッション（completed_at − workedMinutes 〜 completed_at）を生成するバックフィルマイグレーション。
+- 褒めログタイムラインビュー（`TimelineView.tsx`）の `taskToSegments()` を `work_sessions` 直読みに切り替え、複数セッションを正確に描画。
+- セッション単位の編集UI（誤計測の手動修正）。
+
 ## 2026-06-02: 褒めログに24時間タイムラインビューを追加
 **ブランチ:** claude/optimistic-dirac-8HlON
 
