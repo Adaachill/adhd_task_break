@@ -27,6 +27,13 @@ function elapsedMinutes(startedAt: number | null): number {
   return Math.max(1, Math.round((Date.now() - startedAt) / 60_000));
 }
 
+// 累計作業分数（中断ありの場合に積算済み分 + 現セグメント分）
+function totalWorkedMinutes(accumulated: number | null, startedAt: number | null): number {
+  const segment = startedAt != null ? Math.max(0, Math.round((Date.now() - startedAt) / 60_000)) : 0;
+  const total = (accumulated ?? 0) + segment;
+  return total > 0 ? Math.max(1, total) : 0;
+}
+
 export function BrakeTimer({ task, onTimeUp, onComplete, onPause, onGoalCheck }: Props) {
   const startBrakeTimer = useTaskStore((s) => s.startBrakeTimer);
   const { fs } = useLayout();
@@ -83,7 +90,8 @@ export function BrakeTimer({ task, onTimeUp, onComplete, onPause, onGoalCheck }:
       await cancelNotification(notifId);
       notifMap.delete(task.id);
     }
-    const worked = elapsedMinutes(task.timerStartedAt);
+    // 中断・再開を含む全期間を合算（過去セッション分が workedMinutes に積算済み）
+    const worked = totalWorkedMinutes(task.workedMinutes, task.timerStartedAt);
     if (task.timerGoal) {
       setPendingWorkedMinutes(worked);
       setGoalCheckMode('complete');
@@ -100,7 +108,7 @@ export function BrakeTimer({ task, onTimeUp, onComplete, onPause, onGoalCheck }:
       notifMap.delete(task.id);
     }
     if (task.timerGoal) {
-      setPendingWorkedMinutes(elapsedMinutes(task.timerStartedAt));
+      setPendingWorkedMinutes(totalWorkedMinutes(task.workedMinutes, task.timerStartedAt));
       setGoalCheckMode('pause');
     } else {
       onPause();
