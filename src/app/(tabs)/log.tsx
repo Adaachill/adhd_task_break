@@ -4,6 +4,7 @@ import { Alert, Modal, Platform, Pressable, ScrollView, Share, StyleSheet, Text,
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { TimelineView } from '@/features/praiseLog/TimelineView';
+import { listDoneBetween } from '@/db/taskRepo';
 import { useLayout } from '@/hooks/useLayout';
 import { buildPraiseComment } from '@/services/praiseComment';
 import { useTaskStore } from '@/store/taskStore';
@@ -11,6 +12,24 @@ import { colors, radius, spacing } from '@/theme/tokens';
 import type { ShojikubaiTier, Task } from '@/types/task';
 
 type ViewMode = 'praise' | 'timeline';
+
+function startOfDay(d: Date): Date {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+}
+
+function isSameDay(a: Date, b: Date): boolean {
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+}
+
+function formatDateLabel(d: Date): string {
+  const today = startOfDay(new Date());
+  const target = startOfDay(d);
+  const diffDays = Math.round((target.getTime() - today.getTime()) / (24 * 60 * 60 * 1000));
+  const ymd = `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}`;
+  if (diffDays === 0) return `今日 ${ymd}`;
+  if (diffDays === -1) return `昨日 ${ymd}`;
+  return ymd;
+}
 
 // 松竹梅 tier カラー定義
 const TIER: Record<ShojikubaiTier, { label: string; color: string }> = {
@@ -259,12 +278,19 @@ function TierDots({ tasks }: { tasks: Task[] }) {
 }
 
 export default function LogScreen() {
-  const { doneTasks, loadDoneToday } = useTaskStore();
+  const { doneTasks: todayDoneTasks, loadDoneToday } = useTaskStore();
   const reopenTask = useTaskStore((s) => s.reopenTask);
   const updateDoneTask = useTaskStore((s) => s.updateDoneTask);
   const { fs, isDesktop } = useLayout();
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [mode, setMode] = useState<ViewMode>('praise');
+
+  // 表示対象の日付（デフォルトは今日）。過去日付選択時はローカル state で取得。
+  const [selectedDate, setSelectedDate] = useState<Date>(() => startOfDay(new Date()));
+  const [pastDoneTasks, setPastDoneTasks] = useState<Task[]>([]);
+  const [loadingPast, setLoadingPast] = useState(false);
+  const isToday = isSameDay(selectedDate, new Date());
+  const doneTasks = isToday ? todayDoneTasks : pastDoneTasks;
 
   const handleReopen = useCallback(
     async (task: Task) => {
@@ -285,9 +311,42 @@ export default function LogScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      void loadDoneToday();
-    }, [loadDoneToday])
+      if (isToday) void loadDoneToday();
+    }, [isToday, loadDoneToday])
   );
+
+  // 過去日付選択時はその場で取得
+  useEffect(() => {
+    if (isToday) return;
+    let cancelled = false;
+    setLoadingPast(true);
+    const start = selectedDate.getTime();
+    const end = start + 24 * 60 * 60 * 1000;
+    void listDoneBetween(start, end).then((tasks) => {
+      if (!cancelled) {
+        setPastDoneTasks(tasks);
+        setLoadingPast(false);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedDate, isToday]);
+
+  const goPrevDay = () => {
+    const prev = new Date(selectedDate);
+    prev.setDate(prev.getDate() - 1);
+    setSelectedDate(startOfDay(prev));
+  };
+  const goNextDay = () => {
+    if (isToday) return;
+    const next = new Date(selectedDate);
+    next.setDate(next.getDate() + 1);
+    const nextStart = startOfDay(next);
+    const todayStart = startOfDay(new Date());
+    setSelectedDate(nextStart.getTime() > todayStart.getTime() ? todayStart : nextStart);
+  };
+  const goToday = () => setSelectedDate(startOfDay(new Date()));
 
   const totalMinutes = useMemo(
     () => doneTasks.reduce((sum, t) => sum + (t.workedMinutes ?? 0), 0),
@@ -344,7 +403,9 @@ export default function LogScreen() {
       <View style={[styles.container, isDesktop && styles.containerDesktop]}>
         {/* ヘッダー */}
         <View style={styles.header}>
-          <Text style={[styles.title, { fontSize: fs.title }]}>本日の褒めログ</Text>
+          <Text style={[styles.title, { fontSize: fs.title }]}>
+            {isToday ? '本日の褒めログ' : '過去の褒めログ'}
+          </Text>
           {count > 0 && mode === 'praise' && (
             <Pressable
               onPress={handleShare}
@@ -354,6 +415,36 @@ export default function LogScreen() {
               <Text style={[styles.shareIcon, { fontSize: fs.body }]}>＜</Text>
             </Pressable>
           )}
+        </View>
+
+        {/* 日付ナビゲーション */}
+        <View style={styles.dateNav}>
+          <Pressable
+            onPress={goPrevDay}
+            style={({ pressed }) => [styles.navBtn, { opacity: pressed ? 0.6 : 1 }]}
+            accessibilityRole="button"
+            accessibilityLabel="前の日">
+            <Text style={[styles.navTxt, { fontSize: fs.body }]}>◀</Text>
+          </Pressable>
+          <Pressable
+            onPress={goToday}
+            disabled={isToday}
+            style={({ pressed }) => [styles.dateLabelBtn, { opacity: pressed && !isToday ? 0.7 : 1 }]}
+            accessibilityRole="button"
+            accessibilityLabel="今日に戻る">
+            <Text style={[styles.dateLabel, { fontSize: fs.body }]}>{formatDateLabel(selectedDate)}</Text>
+            {!isToday && (
+              <Text style={[styles.dateLabelHint, { fontSize: fs.caption }]}>タップで今日に戻る</Text>
+            )}
+          </Pressable>
+          <Pressable
+            onPress={goNextDay}
+            disabled={isToday}
+            style={({ pressed }) => [styles.navBtn, { opacity: isToday ? 0.25 : pressed ? 0.6 : 1 }]}
+            accessibilityRole="button"
+            accessibilityLabel="次の日">
+            <Text style={[styles.navTxt, { fontSize: fs.body }]}>▶</Text>
+          </Pressable>
         </View>
 
         {/* 表示切替タブ */}
@@ -377,18 +468,23 @@ export default function LogScreen() {
           ))}
         </View>
 
-        {mode === 'timeline' ? (
+        {loadingPast ? (
+          <View style={styles.empty}>
+            <Text style={[styles.emptyBody, { fontSize: fs.small }]}>読み込み中…</Text>
+          </View>
+        ) : mode === 'timeline' ? (
           <TimelineView tasks={doneTasks} />
         ) : count === 0 ? (
           /* 未クリア時 */
           <View style={styles.empty}>
             <Text style={[styles.emptyEmoji, { fontSize: fs.title * 2 }]}>🌱</Text>
             <Text style={[styles.emptyTitle, { fontSize: fs.body }]}>
-              まだ今日のクリアはありません
+              {isToday ? 'まだ今日のクリアはありません' : 'この日のクリア記録はありません'}
             </Text>
             <Text style={[styles.emptyBody, { fontSize: fs.small }]}>
-              「今日」タブで梅をひとつクリアするだけで、ここに記録されます。{'\n'}
-              できなかったことは表示しません。できたことだけ祝います。
+              {isToday
+                ? '「今日」タブで梅をひとつクリアするだけで、ここに記録されます。\nできなかったことは表示しません。できたことだけ祝います。'
+                : '別の日付をめくってみてください。'}
             </Text>
           </View>
         ) : (
@@ -630,5 +726,36 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     textAlign: 'center',
     lineHeight: 22,
+  },
+  dateNav: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.sm,
+    gap: spacing.sm,
+  },
+  navBtn: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surface,
+  },
+  navTxt: {
+    color: colors.text,
+    fontWeight: '700',
+  },
+  dateLabelBtn: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: spacing.sm,
+  },
+  dateLabel: {
+    color: colors.text,
+    fontWeight: '700',
+  },
+  dateLabelHint: {
+    color: colors.textSecondary,
+    marginTop: 2,
   },
 });
