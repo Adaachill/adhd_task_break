@@ -191,3 +191,26 @@ export async function removeTask(id: string): Promise<void> {
   const db = await getDb();
   await db.runAsync(`DELETE FROM tasks WHERE id = ?`, [id]);
 }
+
+// 入力中テキストと部分一致する過去タスクを返す（重複テキストは最新のみ、最大 limit 件）。
+// 前方一致を後方一致より優先し、その中で updated_at の新しい順で並べる。
+export async function searchSimilarTasks(query: string, limit: number = 5): Promise<Task[]> {
+  const trimmed = query.trim();
+  if (trimmed.length < 2) return [];
+  const db = await getDb();
+  const containsLike = `%${trimmed}%`;
+  const prefixLike = `${trimmed}%`;
+  const rows = await db.getAllAsync<TaskRow>(
+    `SELECT t.* FROM tasks t
+     INNER JOIN (
+       SELECT text, MAX(updated_at) AS max_updated
+       FROM tasks
+       WHERE text LIKE ?
+       GROUP BY text
+     ) latest ON t.text = latest.text AND t.updated_at = latest.max_updated
+     ORDER BY (CASE WHEN t.text LIKE ? THEN 0 ELSE 1 END), t.updated_at DESC
+     LIMIT ?`,
+    [containsLike, prefixLike, limit]
+  );
+  return rows.map(rowToTask);
+}
