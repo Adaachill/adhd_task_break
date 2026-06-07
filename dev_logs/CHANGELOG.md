@@ -1,5 +1,38 @@
 # 開発履歴
 
+## 2026-06-07: 習慣ヒートマップに操作・週合計・消失バグ修正
+**ブランチ:** claude/heatmap-actions-week-zKlx
+
+### 変更内容
+- `src/db/taskRepo.ts`:
+  - `listHabitTasks` のクエリを修正。「過去に一度でも `is_habit=1` だった text」をすべて返すよう変更。直近の編集で `is_habit` が 0 に落ちても草が消えないようにする（消失バグ対応）。
+  - `renameTasksByText(old, new)` / `deleteTasksByText(text)` を追加。削除は `work_sessions` も明示削除（PRAGMA foreign_keys は未有効化のため）。
+- `src/store/taskStore.ts`:
+  - `startHabitByText(text)`: 今日タブの既存タスクを優先再利用 → inbox → 過去の done を雛形に新規作成 → 🚀 自動 start（🔵 のみ）。
+  - `renameHabit(old, new)` / `deleteHabit(text)`: ストアの inbox/today/done に即時反映してから DB を更新。
+- `src/features/habits/HabitHeatmap.tsx`:
+  - 習慣ラベルをタップ → `startHabitByText` で開始。「▶」プレフィックスで開始可能と明示。
+  - 各行末尾に「⋯」アクションメニュー: ▶ 始める / ✎ 編集 / 🗑 履歴ごと削除。
+  - リネーム編集モーダルを追加。同じ text を持つ全タスクをリネームし、ヒートマップの履歴を途切れさせない。
+  - 削除は確認ダイアログ（Web は `window.confirm`、Native は `Alert`）を挟む。
+  - セル選択時の詳細表示に「**週合計（日〜土）**」を追加。集計・タスク別の両方で表示。
+
+### 変更意図・背景
+- ユーザ操作で「日記を書く」など過去の習慣が草グリッドから消える事象が報告された。原因は `listHabitTasks` が `WHERE is_habit=1` で最新行を絞り込んでいたため、最新行の `is_habit` が 0 に切り替わると（バッジ誤タップや `updateTodayTask({ isHabit: false })` 経由など）text 全体がリストから外れていたこと。クエリを「テキストが過去に一度でも習慣だったか」基準に緩和して再発を防いだ。
+- 草を眺めるだけでなく「ここから今日の習慣を始める」「タスクを整理する」までを 1 画面で完結させたい、というフィードバックに応えて、ラベルタップで開始 + 操作メニューを実装。
+- 1日分だけでなく「今週どれだけ積み上がったか」を可視化する週合計を追加。GitHub の grass と同じく日曜始まりで集計。
+
+### 技術的決定事項
+- 開始フロー: 既存の `moveToToday` / `startBlueTask` を再利用し、過去 done からの複製は `insertTask` 後に当日リストを `listToday` で再読込して整合性を保つ。
+- 削除はテキスト一括（履歴消去）。「ヒートマップから外したいだけ」のケースは今後 `is_habit` をまとめて 0 に落とすメニューを別途追加することを検討。
+- 編集はリネームのみ。`type` / `due` の編集は既存の TodayTaskCard 側で完結するため二重 UI を避ける。
+- 週合計は **日曜〜土曜** に固定（heatmap のグリッドが日曜始まりのため整合）。
+
+### 残課題・次のステップ
+- 「習慣 → 単発」誤操作の防止（バッジを確認ダイアログ付きにする）。
+- ストリーク（連続日数）と今週累計を heatmap 上部にカード表示。
+- 削除時のアンドゥ。
+
 ## 2026-06-07: 習慣化タスクの GitHub-grass 風ヒートマップ + 日次リセット
 **ブランチ:** claude/pensive-archimedes-qyhUI
 

@@ -133,7 +133,9 @@ export async function listToday(todayStartMs?: number, todayEndMs?: number): Pro
   return rows.map(rowToTask);
 }
 
-// 習慣化タスク一覧（ヒートマップ用。同じ text のものは最新の1件にまとめる）
+// 習慣化タスク一覧（ヒートマップ用）。
+// 「過去に一度でも is_habit=1 だった text」をすべて返す。各 text の表示用には最新行を使う。
+// 直近の編集で is_habit=0 に切り替わってしまったケースでも、ヒートマップから消えないようにする。
 export async function listHabitTasks(): Promise<Task[]> {
   const db = await getDb();
   const rows = await db.getAllAsync<TaskRow>(
@@ -141,13 +143,30 @@ export async function listHabitTasks(): Promise<Task[]> {
      INNER JOIN (
        SELECT text, MAX(updated_at) AS max_updated
        FROM tasks
-       WHERE is_habit = 1
        GROUP BY text
      ) latest ON t.text = latest.text AND t.updated_at = latest.max_updated
-     WHERE t.is_habit = 1
+     WHERE t.text IN (SELECT DISTINCT text FROM tasks WHERE is_habit = 1)
      ORDER BY t.updated_at DESC`
   );
   return rows.map(rowToTask);
+}
+
+// 同じ text を持つ全タスクの text を一括リネーム（履歴も含めて統一）。
+export async function renameTasksByText(oldText: string, newText: string): Promise<void> {
+  const db = await getDb();
+  const now = Date.now();
+  await db.runAsync(`UPDATE tasks SET text = ?, updated_at = ? WHERE text = ?`, [newText, now, oldText]);
+}
+
+// 指定 text のタスクをすべて削除し、関連する work_sessions も削除する。
+// SQLite の FK CASCADE は PRAGMA foreign_keys=ON を要するが本プロジェクトでは有効化していないため、明示削除。
+export async function deleteTasksByText(text: string): Promise<void> {
+  const db = await getDb();
+  await db.runAsync(
+    `DELETE FROM work_sessions WHERE task_id IN (SELECT id FROM tasks WHERE text = ?)`,
+    [text]
+  );
+  await db.runAsync(`DELETE FROM tasks WHERE text = ?`, [text]);
 }
 
 // 指定 text 群と同じ text を持つ全タスク id（過去含む。ヒートマップで habit を text 単位で集計するため）

@@ -4,13 +4,27 @@
 // 「毎日リセット」仕様に従い、work_sessions の started_at を日付に丸めて集計する。
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { listHabitTasks, listTaskIdsByTexts, listDoneBetween } from '@/db/taskRepo';
 import { listSessionsForTasksBetween } from '@/db/sessionRepo';
 import { useLayout } from '@/hooks/useLayout';
+import { useTaskStore } from '@/store/taskStore';
 import { colors, radius, spacing } from '@/theme/tokens';
 import type { Task } from '@/types/task';
+
+// Web では window.confirm、Native では Alert で確認ダイアログを出す。
+function confirmAsync(message: string): Promise<boolean> {
+  if (Platform.OS === 'web') {
+    return Promise.resolve(typeof window !== 'undefined' ? window.confirm(message) : false);
+  }
+  return new Promise((resolve) => {
+    Alert.alert('確認', message, [
+      { text: 'キャンセル', style: 'cancel', onPress: () => resolve(false) },
+      { text: 'OK', style: 'destructive', onPress: () => resolve(true) },
+    ]);
+  });
+}
 
 const WEEKS = 12; // 過去 12 週間（GitHub の草に倣う短めスケール）
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -102,11 +116,38 @@ function formatFullDay(ms: number): string {
   return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}`;
 }
 
+// 日曜始まりの週の最初の日(00:00)。
+function startOfWeek(ts: number): number {
+  const d0 = startOfDay(ts);
+  const dow = new Date(d0).getDay();
+  return d0 - dow * DAY_MS;
+}
+
+// 同じ週の7日分の dayMs 配列を返す。
+function weekDays(ts: number): number[] {
+  const ws = startOfWeek(ts);
+  return [0, 1, 2, 3, 4, 5, 6].map((i) => ws + i * DAY_MS);
+}
+
+function formatWeekRange(ts: number): string {
+  const days = weekDays(ts);
+  const a = new Date(days[0]);
+  const b = new Date(days[6]);
+  return `${a.getMonth() + 1}/${a.getDate()}〜${b.getMonth() + 1}/${b.getDate()}`;
+}
+
 export function HabitHeatmap() {
   const { fs } = useLayout();
+  const startHabitByText = useTaskStore((s) => s.startHabitByText);
+  const renameHabit = useTaskStore((s) => s.renameHabit);
+  const deleteHabit = useTaskStore((s) => s.deleteHabit);
+
   const [data, setData] = useState<HeatmapData | null>(null);
   const [selectedDay, setSelectedDay] = useState<number | null>(null);
   const [selectedHabit, setSelectedHabit] = useState<string | null>(null);
+  const [actionTarget, setActionTarget] = useState<string | null>(null); // 開いている操作モーダルの text
+  const [editingText, setEditingText] = useState<string | null>(null); // リネーム編集中の元 text
+  const [editValue, setEditValue] = useState('');
 
   const grid = useMemo(buildGrid, []);
   const rangeStart = grid[0][0];
@@ -176,6 +217,49 @@ export function HabitHeatmap() {
     void load();
   }, [load]);
 
+  const handleStart = useCallback(
+    async (text: string) => {
+      setActionTarget(null);
+      await startHabitByText(text);
+      // 完了後にヒートマップも最新化（タスク追加・移動の反映）
+      void load();
+    },
+    [startHabitByText, load]
+  );
+
+  const handleOpenEdit = useCallback((text: string) => {
+    setActionTarget(null);
+    setEditingText(text);
+    setEditValue(text);
+  }, []);
+
+  const handleSaveEdit = useCallback(async () => {
+    if (!editingText) return;
+    const next = editValue.trim();
+    if (!next || next === editingText) {
+      setEditingText(null);
+      return;
+    }
+    await renameHabit(editingText, next);
+    setEditingText(null);
+    setSelectedHabit((cur) => (cur === editingText ? next : cur));
+    void load();
+  }, [editingText, editValue, renameHabit, load]);
+
+  const handleDelete = useCallback(
+    async (text: string) => {
+      setActionTarget(null);
+      const ok = await confirmAsync(
+        `「${text}」の履歴とセッションをすべて削除します。元に戻せません。よろしいですか？`
+      );
+      if (!ok) return;
+      await deleteHabit(text);
+      setSelectedHabit((cur) => (cur === text ? null : cur));
+      void load();
+    },
+    [deleteHabit, load]
+  );
+
   if (!data) {
     return (
       <View style={styles.loading}>
@@ -243,16 +327,28 @@ export function HabitHeatmap() {
             />
           </View>
         </ScrollView>
-        {selectedDay != null && selectedAggregate && (
-          <Text style={[styles.detail, { fontSize: fs.caption }]}>
-            {formatFullDay(selectedDay)}: ✅ {selectedAggregate.count}件 / ⏱ {selectedAggregate.minutes}分
-          </Text>
-        )}
-        {selectedDay != null && !selectedAggregate && (
-          <Text style={[styles.detail, { fontSize: fs.caption }]}>
-            {formatFullDay(selectedDay)}: 記録なし
-          </Text>
-        )}
+        {selectedDay != null && (() => {
+          // 週合計（日曜〜土曜）
+          const week = weekDays(selectedDay);
+          let weekCount = 0;
+          let weekMinutes = 0;
+          for (const d of week) {
+            const a = data.aggregate.get(d);
+            if (!a) continue;
+            weekCount += a.count;
+            weekMinutes += a.minutes;
+          }
+          return (
+            <View style={styles.detailBlock}>
+              <Text style={[styles.detail, { fontSize: fs.caption }]}>
+                {formatFullDay(selectedDay)}: ✅ {selectedAggregate?.count ?? 0}件 / ⏱ {selectedAggregate?.minutes ?? 0}分
+              </Text>
+              <Text style={[styles.detailSub, { fontSize: fs.caption }]}>
+                週合計({formatWeekRange(selectedDay)}): ✅ {weekCount}件 / ⏱ {weekMinutes}分
+              </Text>
+            </View>
+          );
+        })()}
       </View>
 
       {/* タスクごとのヒートマップ */}
@@ -270,19 +366,30 @@ export function HabitHeatmap() {
               const dayMap = data.perHabit.get(habit.text);
               return (
                 <View key={habit.id} style={styles.habitRow}>
-                  <Pressable
-                    onPress={() => setSelectedHabit(habit.text === selectedHabit ? null : habit.text)}
-                    style={styles.habitLabelBtn}>
-                    <Text
-                      style={[
-                        styles.habitLabel,
-                        { fontSize: fs.caption },
-                        selectedHabit === habit.text && styles.habitLabelActive,
-                      ]}
-                      numberOfLines={1}>
-                      {habit.text}
-                    </Text>
-                  </Pressable>
+                  <View style={styles.habitLabelBtn}>
+                    <Pressable
+                      style={styles.habitLabelInner}
+                      onPress={() => handleStart(habit.text)}
+                      accessibilityRole="button"
+                      accessibilityLabel={`「${habit.text}」を始める`}>
+                      <Text
+                        style={[
+                          styles.habitLabel,
+                          { fontSize: fs.caption },
+                          selectedHabit === habit.text && styles.habitLabelActive,
+                        ]}
+                        numberOfLines={1}>
+                        ▶ {habit.text}
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={() => setActionTarget(habit.text)}
+                      hitSlop={6}
+                      accessibilityRole="button"
+                      accessibilityLabel="習慣の編集・削除メニュー">
+                      <Text style={[styles.habitMore, { fontSize: fs.caption }]}>⋯</Text>
+                    </Pressable>
+                  </View>
                   <Grid
                     grid={grid}
                     getValue={(day) => dayMap?.get(day) ?? 0}
@@ -301,16 +408,190 @@ export function HabitHeatmap() {
             })}
           </View>
         </ScrollView>
-        {selectedHabit != null && selectedDay != null && (
-          <Text style={[styles.detail, { fontSize: fs.caption }]}>
-            {selectedHabit} ・ {formatFullDay(selectedDay)}: ⏱{' '}
-            {data.perHabit.get(selectedHabit)?.get(selectedDay) ?? 0}分
-          </Text>
-        )}
+        {selectedHabit != null && selectedDay != null && (() => {
+          const dayMap = data.perHabit.get(selectedHabit);
+          const dayMin = dayMap?.get(selectedDay) ?? 0;
+          let weekMin = 0;
+          for (const d of weekDays(selectedDay)) weekMin += dayMap?.get(d) ?? 0;
+          return (
+            <View style={styles.detailBlock}>
+              <Text style={[styles.detail, { fontSize: fs.caption }]}>
+                {selectedHabit} ・ {formatFullDay(selectedDay)}: ⏱ {dayMin}分
+              </Text>
+              <Text style={[styles.detailSub, { fontSize: fs.caption }]}>
+                週合計({formatWeekRange(selectedDay)}): ⏱ {weekMin}分
+              </Text>
+            </View>
+          );
+        })()}
       </View>
+
+      {/* 習慣ごとの操作モーダル */}
+      <Modal
+        transparent
+        animationType="fade"
+        visible={actionTarget != null}
+        onRequestClose={() => setActionTarget(null)}>
+        <Pressable style={modalStyles.backdrop} onPress={() => setActionTarget(null)}>
+          <Pressable style={modalStyles.sheet} onPress={() => {}}>
+            <Text style={[modalStyles.sheetTitle, { fontSize: fs.body }]} numberOfLines={2}>
+              {actionTarget}
+            </Text>
+            <Pressable
+              style={modalStyles.row}
+              onPress={() => actionTarget && handleStart(actionTarget)}>
+              <Text style={[modalStyles.rowText, { fontSize: fs.body }]}>▶ このタスクを始める</Text>
+            </Pressable>
+            <Pressable
+              style={modalStyles.row}
+              onPress={() => actionTarget && handleOpenEdit(actionTarget)}>
+              <Text style={[modalStyles.rowText, { fontSize: fs.body }]}>✎ 名前を編集</Text>
+            </Pressable>
+            <Pressable
+              style={modalStyles.row}
+              onPress={() => actionTarget && handleDelete(actionTarget)}>
+              <Text style={[modalStyles.rowText, modalStyles.danger, { fontSize: fs.body }]}>
+                🗑 履歴ごと削除
+              </Text>
+            </Pressable>
+            <Pressable
+              style={[modalStyles.row, modalStyles.cancel]}
+              onPress={() => setActionTarget(null)}>
+              <Text style={[modalStyles.rowText, { color: colors.textSecondary, fontSize: fs.body }]}>
+                キャンセル
+              </Text>
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* リネーム編集モーダル */}
+      <Modal
+        transparent
+        animationType="fade"
+        visible={editingText != null}
+        onRequestClose={() => setEditingText(null)}>
+        <View style={modalStyles.backdrop}>
+          <View style={modalStyles.editCard}>
+            <Text style={[modalStyles.editTitle, { fontSize: fs.body }]}>習慣の名前を編集</Text>
+            <Text style={[modalStyles.editHint, { fontSize: fs.caption }]}>
+              同じ名前のタスクを履歴含めてすべてリネームします。
+            </Text>
+            <TextInput
+              style={[modalStyles.editInput, { fontSize: fs.body }]}
+              value={editValue}
+              onChangeText={setEditValue}
+              autoFocus
+              multiline
+              placeholder="習慣の名前"
+              placeholderTextColor={colors.textSecondary}
+            />
+            <View style={modalStyles.editBtnRow}>
+              <Pressable
+                style={[modalStyles.editBtn, modalStyles.editCancelBtn]}
+                onPress={() => setEditingText(null)}>
+                <Text style={[modalStyles.editBtnText, { color: colors.textSecondary, fontSize: fs.small }]}>
+                  キャンセル
+                </Text>
+              </Pressable>
+              <Pressable
+                style={[modalStyles.editBtn, modalStyles.editSaveBtn]}
+                onPress={handleSaveEdit}>
+                <Text style={[modalStyles.editBtnText, { color: '#fff', fontSize: fs.small }]}>保存</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
+
+const modalStyles = StyleSheet.create({
+  backdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: spacing.xl,
+  },
+  sheet: {
+    width: '100%',
+    maxWidth: 360,
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    padding: spacing.md,
+    gap: spacing.xs,
+  },
+  sheetTitle: {
+    color: colors.textSecondary,
+    paddingHorizontal: spacing.sm,
+    paddingTop: spacing.xs,
+    paddingBottom: spacing.sm,
+    fontWeight: '600',
+  },
+  row: {
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.md,
+  },
+  cancel: {
+    marginTop: spacing.xs,
+    backgroundColor: colors.surfaceAlt,
+  },
+  rowText: {
+    color: colors.text,
+    fontWeight: '600',
+  },
+  danger: {
+    color: colors.fireFrom,
+  },
+  editCard: {
+    width: '100%',
+    maxWidth: 400,
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    padding: spacing.lg,
+    gap: spacing.sm,
+  },
+  editTitle: {
+    color: colors.text,
+    fontWeight: '700',
+  },
+  editHint: {
+    color: colors.textSecondary,
+  },
+  editInput: {
+    color: colors.text,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    minHeight: 60,
+    textAlignVertical: 'top',
+  },
+  editBtnRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginTop: spacing.xs,
+  },
+  editBtn: {
+    flex: 1,
+    paddingVertical: spacing.md,
+    borderRadius: radius.pill,
+    alignItems: 'center',
+  },
+  editCancelBtn: {
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  editSaveBtn: {
+    backgroundColor: colors.accentFrom,
+  },
+  editBtnText: {
+    fontWeight: '700',
+  },
+});
 
 function LegendStrip({ scale, fontSize }: { scale: string[]; fontSize: number }) {
   return (
@@ -486,11 +767,30 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   habitLabelBtn: {
-    width: 88,
+    width: 110,
     paddingTop: 2,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
   },
   habitMonthOffset: {
-    paddingLeft: 88 + spacing.sm,
+    paddingLeft: 110 + spacing.sm,
+  },
+  habitLabelInner: {
+    flex: 1,
+  },
+  habitMore: {
+    color: colors.textSecondary,
+    fontWeight: '700',
+    paddingHorizontal: 4,
+  },
+  detailBlock: {
+    paddingTop: spacing.xs,
+    gap: 2,
+  },
+  detailSub: {
+    color: colors.textSecondary,
+    textAlign: 'center',
   },
   habitLabel: {
     color: colors.text,
