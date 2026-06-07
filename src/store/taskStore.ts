@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 
 import { insertTask, listDoneBetween, listInbox, listToday, updateTask } from '@/db/taskRepo';
-import { closeOpenSession, openSession, sumTaskMinutes } from '@/db/sessionRepo';
+import { closeOpenSession, openSession, sumTaskMinutes, sumTaskMinutesToday } from '@/db/sessionRepo';
 import { estimateTask as aiEstimateTask } from '@/services/ai/deepseek';
 import type { AiHistoryEntry } from '@/services/ai/types';
 import { classify } from '@/services/classify';
@@ -56,6 +56,12 @@ interface TaskState {
     id: string,
     patch: Partial<Pick<Task, 'text' | 'type' | 'due' | 'isHabit' | 'estimatedMinutes' | 'estimateSource' | 'timerMinutes'>>
   ) => Promise<void>;
+}
+
+// 習慣タスクは「今日の分数」だけを workedMinutes に反映する（毎日リセット）。
+// 単発タスクは従来どおり全期間合算。
+async function sumWorked(task: Pick<Task, 'id' | 'isHabit'>): Promise<number> {
+  return task.isHabit ? sumTaskMinutesToday(task.id) : sumTaskMinutes(task.id);
 }
 
 // 当日の 0:00〜翌0:00 のエポックms範囲
@@ -237,7 +243,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
 
     const now = Date.now();
     await closeOpenSession(id, now);
-    const accumulated = await sumTaskMinutes(id);
+    const accumulated = await sumWorked(task);
 
     const updated: Task = {
       ...task,
@@ -274,7 +280,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     if (task.blueStartedAt !== null) {
       await closeOpenSession(id, now);
     }
-    const summed = await sumTaskMinutes(id);
+    const summed = await sumWorked(task);
     const totalWorked = summed > 0 ? summed : task.workedMinutes;
 
     const updated: Task = {
@@ -330,7 +336,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
 
     const now = Date.now();
     await closeOpenSession(id, now);
-    const accumulated = await sumTaskMinutes(id);
+    const accumulated = await sumWorked(task);
 
     const updated: Task = {
       ...task,
@@ -387,7 +393,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     if (task.timerStartedAt !== null) {
       await closeOpenSession(id, now);
     }
-    const summed = await sumTaskMinutes(id);
+    const summed = await sumWorked(task);
     const finalWorked = summed > 0 ? summed : workedMinutes;
 
     const updated: Task = {
@@ -418,6 +424,10 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     if (!task) return;
 
     const now = Date.now();
+    // 習慣タスクは新しい日に再開した場合 workedMinutes を 0 にリセット（日次リセット仕様）
+    const { start: todayStart } = todayRange();
+    const resetHabitMinutes =
+      task.isHabit && task.completedAt != null && task.completedAt < todayStart;
     const updated: Task = {
       ...task,
       status: 'today',
@@ -428,6 +438,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
       timerStartedAt: null,
       // 取り掛かりラグ計測の起点を再設定
       movedToTodayAt: task.movedToTodayAt ?? now,
+      workedMinutes: resetHabitMinutes ? null : task.workedMinutes,
       updatedAt: now,
     };
 
