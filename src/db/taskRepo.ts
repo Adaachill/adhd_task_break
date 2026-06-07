@@ -133,6 +133,41 @@ export async function listToday(todayStartMs?: number, todayEndMs?: number): Pro
   return rows.map(rowToTask);
 }
 
+// 習慣化タスク一覧（ヒートマップ用。同じ text のものは最新の1件にまとめる）
+export async function listHabitTasks(): Promise<Task[]> {
+  const db = await getDb();
+  const rows = await db.getAllAsync<TaskRow>(
+    `SELECT t.* FROM tasks t
+     INNER JOIN (
+       SELECT text, MAX(updated_at) AS max_updated
+       FROM tasks
+       WHERE is_habit = 1
+       GROUP BY text
+     ) latest ON t.text = latest.text AND t.updated_at = latest.max_updated
+     WHERE t.is_habit = 1
+     ORDER BY t.updated_at DESC`
+  );
+  return rows.map(rowToTask);
+}
+
+// 指定 text 群と同じ text を持つ全タスク id（過去含む。ヒートマップで habit を text 単位で集計するため）
+export async function listTaskIdsByTexts(texts: string[]): Promise<Map<string, string[]>> {
+  if (texts.length === 0) return new Map();
+  const db = await getDb();
+  const placeholders = texts.map(() => '?').join(',');
+  const rows = await db.getAllAsync<{ id: string; text: string }>(
+    `SELECT id, text FROM tasks WHERE text IN (${placeholders})`,
+    texts
+  );
+  const map = new Map<string, string[]>();
+  for (const r of rows) {
+    const arr = map.get(r.text) ?? [];
+    arr.push(r.id);
+    map.set(r.text, arr);
+  }
+  return map;
+}
+
 export async function listDoneBetween(startMs: number, endMs: number): Promise<Task[]> {
   const db = await getDb();
   const rows = await db.getAllAsync<TaskRow>(

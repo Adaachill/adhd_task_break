@@ -3,6 +3,7 @@ import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { HabitHeatmap } from '@/features/habits/HabitHeatmap';
 import { ActiveSessionBanner } from '@/features/today/ActiveSessionBanner';
 import { TaskPickerModal } from '@/features/today/TaskPickerModal';
 import { TaskSuggestRow } from '@/features/today/TaskSuggestRow';
@@ -113,6 +114,7 @@ export default function TodayScreen() {
 
         {/* タスクカード + 候補リスト */}
         <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
+          {tab === 'habit' && <HabitHeatmap />}
           {orderedTasks.map((task, index) => (
             <TodayTaskCard
               key={task.id}
