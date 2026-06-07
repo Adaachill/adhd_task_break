@@ -1,6 +1,14 @@
 import { create } from 'zustand';
 
-import { insertTask, listDoneBetween, listInbox, listToday, updateTask } from '@/db/taskRepo';
+import {
+  deleteTasksByText,
+  insertTask,
+  listDoneBetween,
+  listInbox,
+  listToday,
+  renameTasksByText,
+  updateTask,
+} from '@/db/taskRepo';
 import { closeOpenSession, openSession, sumTaskMinutes, sumTaskMinutesToday } from '@/db/sessionRepo';
 import { estimateTask as aiEstimateTask } from '@/services/ai/deepseek';
 import type { AiHistoryEntry } from '@/services/ai/types';
@@ -56,6 +64,13 @@ interface TaskState {
     id: string,
     patch: Partial<Pick<Task, 'text' | 'type' | 'due' | 'isHabit' | 'estimatedMinutes' | 'estimateSource' | 'timerMinutes'>>
   ) => Promise<void>;
+  // ── ヒートマップからの操作（テキスト単位） ──
+  // 同じ text のタスクが既に今日にあれば再開、inbox にあれば昇格、なければ最新版を雛形に新規作成して今日に入れる。
+  startHabitByText: (text: string) => Promise<void>;
+  // 同じ text を持つ全タスクをリネーム（履歴も含めて統一）。
+  renameHabit: (oldText: string, newText: string) => Promise<void>;
+  // 同じ text を持つ全タスク + work_sessions を削除。
+  deleteHabit: (text: string) => Promise<void>;
 }
 
 // 習慣タスクは「今日の分数」だけを workedMinutes に反映する（毎日リセット）。
@@ -470,6 +485,110 @@ export const useTaskStore = create<TaskState>((set, get) => ({
       todayTasks: s.todayTasks.map((t) => (t.id === id ? { ...t, ...patch, updatedAt: updated.updatedAt } : t)),
     }));
     await updateTask(updated);
+  },
+
+  // ヒートマップから習慣を「始める」: 既存があれば再利用、なければ最新版を雛形に新規作成して今日に入れる。
+  startHabitByText: async (text: string) => {
+    // 1. 既に今日にあれば再開（🔵 のみ自動 start。🔥 はタイマー設定が必要なので何もしない）
+    const inTodayActive = get().todayTasks.find((t) => t.text === text && t.status === 'today');
+    if (inTodayActive) {
+      if (inTodayActive.type === 'blue' && inTodayActive.blueStartedAt == null) {
+        await get().startBlueTask(inTodayActive.id);
+      }
+      return;
+    }
+    // 2. 完了済みで今日タブに残っているなら再開
+    const inTodayDone = get().todayTasks.find((t) => t.text === text && t.status === 'done');
+    if (inTodayDone) {
+      await get().reopenTask(inTodayDone.id);
+      return;
+    }
+    // 3. inbox にあれば昇格
+    const inbox = get().tasks.find((t) => t.text === text);
+    if (inbox) {
+      await get().moveToToday(inbox.id);
+      const fresh = get().todayTasks.find((t) => t.id === inbox.id);
+      if (fresh?.type === 'blue') await get().startBlueTask(inbox.id);
+      return;
+    }
+    // 4. 過去の習慣テンプレを取得（最新の完了タスクから雛形を複製）
+    const now = Date.now();
+    const { start: todayStart, end: todayEnd } = todayRange();
+    // 直近の同 text タスク（doneTasks に含まれているとは限らないので、新規にコピーする）
+    const allDone = await listDoneBetween(0, now);
+    const template = allDone.find((t) => t.text === text) ?? null;
+    const newTask: Task = template
+      ? {
+          ...template,
+          id: genId(),
+          status: 'today',
+          isHabit: true,
+          completedTier: null,
+          completedAt: null,
+          timerStartedAt: null,
+          blueStartedAt: null,
+          movedToTodayAt: now,
+          timeToStartSeconds: null,
+          workedMinutes: null,
+          continued: null,
+          createdAt: now,
+          updatedAt: now,
+        }
+      : {
+          id: genId(),
+          text,
+          type: 'blue',
+          due: 'today',
+          isHabit: true,
+          status: 'today',
+          classifySource: 'manual',
+          shojikubai: null,
+          completedTier: null,
+          shojikubaiEstimates: null,
+          timerMinutes: null,
+          timerStartedAt: null,
+          timerGoal: null,
+          workedMinutes: null,
+          movedToTodayAt: now,
+          blueStartedAt: null,
+          timeToStartSeconds: null,
+          continued: null,
+          estimatedMinutes: null,
+          estimatedDifficulty: null,
+          estimatedResistance: null,
+          estimateRationale: null,
+          estimateSource: null,
+          completedAt: null,
+          createdAt: now,
+          updatedAt: now,
+        };
+    await insertTask(newTask);
+    set((s) => ({ todayTasks: [...s.todayTasks, newTask] }));
+    if (newTask.type === 'blue') await get().startBlueTask(newTask.id);
+    // 当日リスト再読込（複数テンプレ反映の整合性確保）
+    void listToday(todayStart, todayEnd).then((todayTasks) => set({ todayTasks }));
+  },
+
+  renameHabit: async (oldText: string, newText: string) => {
+    const trimmed = newText.trim();
+    if (!trimmed || trimmed === oldText) return;
+    await renameTasksByText(oldText, trimmed);
+    // メモリ上の各リストも書き換え
+    const rename = (t: Task): Task => (t.text === oldText ? { ...t, text: trimmed, updatedAt: Date.now() } : t);
+    set((s) => ({
+      tasks: s.tasks.map(rename),
+      todayTasks: s.todayTasks.map(rename),
+      doneTasks: s.doneTasks.map(rename),
+    }));
+  },
+
+  deleteHabit: async (text: string) => {
+    await deleteTasksByText(text);
+    set((s) => ({
+      tasks: s.tasks.filter((t) => t.text !== text),
+      todayTasks: s.todayTasks.filter((t) => t.text !== text),
+      doneTasks: s.doneTasks.filter((t) => t.text !== text),
+    }));
   },
 }));
 
