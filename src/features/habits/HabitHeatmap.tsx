@@ -26,7 +26,8 @@ function confirmAsync(message: string): Promise<boolean> {
   });
 }
 
-const WEEKS = 12; // 過去 12 週間（GitHub の草に倣う短めスケール）
+const WEEKS = 12; // 過去 12 週間（集計ヒートマップ）
+const WEEKS_SMALL = 7; // 習慣ごとは 7週×7日 の正方形に圧縮
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 // 色スケール（暗背景に映える緑グラデ）
@@ -52,17 +53,17 @@ function startOfDay(ts: number): number {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
 }
 
-// 12週分の日付配列（縦7×横WEEKS）。先頭が「WEEKS週前の日曜日」になるよう正規化。
-function buildGrid(): number[][] {
+// 縦7×横weeks の日付配列。先頭が「weeks週前の日曜日」になるよう正規化。
+function buildGrid(weeks: number): number[][] {
   const today = startOfDay(Date.now());
   const todayDate = new Date(today);
   const dow = todayDate.getDay(); // 0=Sun
   // 今週の土曜日 = 今日 + (6 - dow) 日
   const endOfThisWeek = today + (6 - dow) * DAY_MS;
-  const start = endOfThisWeek - (WEEKS * 7 - 1) * DAY_MS;
+  const start = endOfThisWeek - (weeks * 7 - 1) * DAY_MS;
 
   const cols: number[][] = [];
-  for (let w = 0; w < WEEKS; w++) {
+  for (let w = 0; w < weeks; w++) {
     const col: number[] = [];
     for (let d = 0; d < 7; d++) {
       col.push(start + (w * 7 + d) * DAY_MS);
@@ -149,7 +150,8 @@ export function HabitHeatmap() {
   const [editingText, setEditingText] = useState<string | null>(null); // リネーム編集中の元 text
   const [editValue, setEditValue] = useState('');
 
-  const grid = useMemo(buildGrid, []);
+  const grid = useMemo(() => buildGrid(WEEKS), []);
+  const gridSmall = useMemo(() => buildGrid(WEEKS_SMALL), []);
   const rangeStart = grid[0][0];
   const rangeEnd = grid[grid.length - 1][6] + DAY_MS;
 
@@ -281,6 +283,9 @@ export function HabitHeatmap() {
 
   const cellSize = 12;
   const cellGap = 3;
+  // 習慣ごと（小グリッド）: 7×7 の正方形に圧縮。1セル 11px → 7×11 + 6×2 = 89px の正方形。
+  const smallCellSize = 11;
+  const smallCellGap = 2;
 
   // 月ラベル（各週の最初の日が月初を跨いだら表示）
   const monthLabels: { col: number; label: string }[] = [];
@@ -308,7 +313,13 @@ export function HabitHeatmap() {
         </View>
         <ScrollView horizontal showsHorizontalScrollIndicator={false}>
           <View>
-            <MonthRow labels={monthLabels} cellSize={cellSize} cellGap={cellGap} fontSize={fs.caption} />
+            <MonthRow
+              labels={monthLabels}
+              cellSize={cellSize}
+              cellGap={cellGap}
+              fontSize={fs.caption}
+              weeks={WEEKS}
+            />
             <Grid
               grid={grid}
               getValue={(day) => {
@@ -351,63 +362,58 @@ export function HabitHeatmap() {
         })()}
       </View>
 
-      {/* タスクごとのヒートマップ */}
+      {/* タスクごとのヒートマップ（7週×7日の正方形を3列で並べる） */}
       <View style={styles.card}>
         <View style={styles.legendRow}>
-          <Text style={[styles.label, { fontSize: fs.caption }]}>習慣ごと（作業分数）</Text>
+          <Text style={[styles.label, { fontSize: fs.caption }]}>習慣ごと（直近7週・作業分数）</Text>
           <LegendStrip scale={SCALE_GREEN} fontSize={fs.caption} />
         </View>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-          <View>
-            <View style={styles.habitMonthOffset}>
-              <MonthRow labels={monthLabels} cellSize={cellSize} cellGap={cellGap} fontSize={fs.caption} />
-            </View>
-            {data.habits.map((habit) => {
-              const dayMap = data.perHabit.get(habit.text);
-              return (
-                <View key={habit.id} style={styles.habitRow}>
-                  <View style={styles.habitLabelBtn}>
-                    <Pressable
-                      style={styles.habitLabelInner}
-                      onPress={() => handleStart(habit.text)}
-                      accessibilityRole="button"
-                      accessibilityLabel={`「${habit.text}」を始める`}>
-                      <Text
-                        style={[
-                          styles.habitLabel,
-                          { fontSize: fs.caption },
-                          selectedHabit === habit.text && styles.habitLabelActive,
-                        ]}
-                        numberOfLines={1}>
-                        ▶ {habit.text}
-                      </Text>
-                    </Pressable>
-                    <Pressable
-                      onPress={() => setActionTarget(habit.text)}
-                      hitSlop={6}
-                      accessibilityRole="button"
-                      accessibilityLabel="習慣の編集・削除メニュー">
-                      <Text style={[styles.habitMore, { fontSize: fs.caption }]}>⋯</Text>
-                    </Pressable>
-                  </View>
-                  <Grid
-                    grid={grid}
-                    getValue={(day) => dayMap?.get(day) ?? 0}
-                    max={data.maxPerHabit}
-                    scale={SCALE_GREEN}
-                    cellSize={cellSize}
-                    cellGap={cellGap}
-                    onPressDay={(day) => {
-                      setSelectedDay(day);
-                      setSelectedHabit(habit.text);
-                    }}
-                    selectedDay={selectedHabit === habit.text ? selectedDay : null}
-                  />
+        <View style={styles.habitGridWrap}>
+          {data.habits.map((habit) => {
+            const dayMap = data.perHabit.get(habit.text);
+            return (
+              <View key={habit.id} style={styles.habitCard}>
+                <View style={styles.habitCardLabelRow}>
+                  <Pressable
+                    style={styles.habitLabelInner}
+                    onPress={() => handleStart(habit.text)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`「${habit.text}」を始める`}>
+                    <Text
+                      style={[
+                        styles.habitLabel,
+                        { fontSize: fs.caption },
+                        selectedHabit === habit.text && styles.habitLabelActive,
+                      ]}
+                      numberOfLines={1}>
+                      ▶ {habit.text}
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => setActionTarget(habit.text)}
+                    hitSlop={6}
+                    accessibilityRole="button"
+                    accessibilityLabel="習慣の編集・削除メニュー">
+                    <Text style={[styles.habitMore, { fontSize: fs.caption }]}>⋯</Text>
+                  </Pressable>
                 </View>
-              );
-            })}
-          </View>
-        </ScrollView>
+                <Grid
+                  grid={gridSmall}
+                  getValue={(day) => dayMap?.get(day) ?? 0}
+                  max={data.maxPerHabit}
+                  scale={SCALE_GREEN}
+                  cellSize={smallCellSize}
+                  cellGap={smallCellGap}
+                  onPressDay={(day) => {
+                    setSelectedDay(day);
+                    setSelectedHabit(habit.text);
+                  }}
+                  selectedDay={selectedHabit === habit.text ? selectedDay : null}
+                />
+              </View>
+            );
+          })}
+        </View>
         {selectedHabit != null && selectedDay != null && (() => {
           const dayMap = data.perHabit.get(selectedHabit);
           const dayMin = dayMap?.get(selectedDay) ?? 0;
@@ -610,14 +616,16 @@ function MonthRow({
   cellSize,
   cellGap,
   fontSize,
+  weeks,
 }: {
   labels: { col: number; label: string }[];
   cellSize: number;
   cellGap: number;
   fontSize: number;
+  weeks: number;
 }) {
   const colWidth = cellSize + cellGap;
-  const totalWidth = WEEKS * colWidth;
+  const totalWidth = weeks * colWidth;
   return (
     <View style={[styles.monthRow, { width: totalWidth }]}>
       {labels.map((l) => (
@@ -775,6 +783,25 @@ const styles = StyleSheet.create({
   },
   habitMonthOffset: {
     paddingLeft: 110 + spacing.sm,
+  },
+  // 3列カードレイアウト
+  habitGridWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginHorizontal: -spacing.xs,
+  },
+  habitCard: {
+    width: '33.333%',
+    paddingHorizontal: spacing.xs,
+    paddingVertical: spacing.xs,
+    gap: 4,
+    alignItems: 'center',
+  },
+  habitCardLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'stretch',
+    gap: 4,
   },
   habitLabelInner: {
     flex: 1,
